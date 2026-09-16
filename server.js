@@ -1,26 +1,22 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server);
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static('public'));
 
-let players = {};
+const players = {};
 
 io.on('connection', (socket) => {
     console.log('Hráč připojen:', socket.id);
 
-    // První hráč se objeví na jedné straně, druhý na druhé
-    const isFirst = Object.keys(players).length === 0;
     players[socket.id] = {
-        x: 0,
-        z: isFirst ? 20 : -20,
-        rotation: isFirst ? 0 : Math.PI,
-        hp: 100
+        x: (Math.random() - 0.5) * 20,
+        z: (Math.random() - 0.5) * 20,
+        rotation: 0
     };
 
     socket.emit('currentPlayers', players);
@@ -36,14 +32,22 @@ io.on('connection', (socket) => {
     });
 
     socket.on('shoot', (data) => {
-        socket.broadcast.emit('playerShot', { id: socket.id, hitPlayerId: data.hitPlayerId });
+        io.emit('playerShot', { shooterId: socket.id, hitPlayerId: data.hitPlayerId, damage: data.damage });
+    });
+
+    // Zpracování hodení Flashbangu
+    socket.on('throwFlashbang', (data) => {
+        socket.broadcast.emit('flashbangExploded', data);
     });
 
     socket.on('disconnect', () => {
+        console.log('Hráč odpojen:', socket.id);
         delete players[socket.id];
         io.emit('playerDisconnected', socket.id);
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server běží na portu ${PORT}`));
+server.listen(PORT, () => {
+    console.log(`Server běží na portu ${PORT}`);
+});
