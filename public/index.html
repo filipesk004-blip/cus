@@ -2,12 +2,12 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS Siege</title>
+    <title>3D FPS Siege - Tactical</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #0a0f1d; font-family: monospace; }
+        body { margin: 0; overflow: hidden; background: #0a0f1d; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         #crosshair {
             position: absolute; top: 50%; left: 50%;
             width: 8px; height: 8px; transform: translate(-50%, -50%);
@@ -20,11 +20,44 @@
 </head>
 <body class="select-none">
     <div id="crosshair"></div>
-    <div class="fixed top-4 left-4 z-10 text-white space-y-1 pointer-events-none bg-black/80 p-4 rounded-lg border border-slate-700">
-        <h1 class="text-amber-400 font-bold text-sm mb-1">SIEGE 3D PvP</h1>
-        <div>KLIKNI PRO AKTIVACI MYŠI</div>
-        <div>Pohyb: <span class="text-amber-300">WASD</span> | Střelba: <span class="text-amber-300">LMB</span></div>
-        <div class="pt-2 text-xs">HP: <span id="hp" class="text-emerald-400 font-bold">100</span></div>
+    
+    <!-- Horní nápověda -->
+    <div class="fixed top-4 left-4 z-10 text-white pointer-events-none bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700/80 shadow-2xl">
+        <h1 class="text-amber-400 font-black tracking-wider text-sm mb-1 uppercase">Siege 3D Tactical</h1>
+        <div class="text-xs text-slate-300 space-y-0.5">
+            <div>Pohyb: <span class="text-amber-400 font-bold">WASD</span></div>
+            <div>Střelba: <span class="text-amber-400 font-bold">LMB</span> | Přebití: <span class="text-amber-400 font-bold">R</span></div>
+        </div>
+    </div>
+
+    <!-- Nové HUD vpravo dole (HP + Zásobník) -->
+    <div class="fixed bottom-6 right-6 z-10 pointer-events-none flex items-center gap-4 bg-slate-900/90 backdrop-blur-md px-6 py-4 rounded-2xl border border-slate-700/80 shadow-2xl">
+        <!-- ZDRAVÍ -->
+        <div class="flex flex-col items-end border-r border-slate-700 pr-4">
+            <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Zdraví</span>
+            <div class="flex items-baseline gap-1">
+                <span id="hp" class="text-3xl font-black text-emerald-400">100</span>
+                <span class="text-xs font-bold text-slate-500">/ 100</span>
+            </div>
+        </div>
+
+        <!-- MUNIČÁK -->
+        <div class="flex flex-col items-start pl-1">
+            <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Munice</span>
+            <div class="flex items-baseline gap-1">
+                <span id="ammo" class="text-3xl font-black text-amber-400">30</span>
+                <span class="text-xs font-bold text-slate-500">/ <span id="max-ammo">30</span></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Death Screen / Respawn Menu -->
+    <div id="death-screen" class="hidden fixed inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md text-white">
+        <h2 class="text-5xl font-black text-red-500 tracking-wider mb-2">BYL JSI ELIMINOVÁN</h2>
+        <p class="text-slate-400 mb-6">Příště buď rychlejší na spoušti.</p>
+        <button id="respawn-btn" class="px-8 py-3 bg-emerald-500 hover:bg-emerald-400 font-bold text-slate-950 rounded-xl shadow-lg shadow-emerald-500/20 transition cursor-pointer transform hover:scale-105">
+            ZNOVU DO AKCE
+        </button>
     </div>
 
     <div id="game-container" class="w-full h-screen"></div>
@@ -37,6 +70,10 @@
 
         let yawObject, pitchObject;
         let myHp = 100;
+        let ammo = 30;
+        const maxAmmo = 30;
+        let isReloading = false;
+
         let otherPlayers = {};
         let gunGroup, muzzleFlash;
         let flashTimer = 0;
@@ -48,7 +85,6 @@
 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
 
-            // FPS rotace pomocí dvou objektů (zabrání naklánění do stran)
             pitchObject = new THREE.Object3D();
             pitchObject.add(camera);
 
@@ -61,10 +97,10 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.getElementById('game-container').appendChild(renderer.domElement);
 
-            const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+            const ambient = new THREE.AmbientLight(0xffffff, 0.7);
             scene.add(ambient);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
             dirLight.position.set(10, 20, 10);
             scene.add(dirLight);
 
@@ -72,8 +108,10 @@
             buildMap();
             setupSocketListeners();
 
-            document.body.addEventListener('click', () => { 
-                if (!isLocked && myHp > 0) document.body.requestPointerLock(); 
+            document.body.addEventListener('click', (e) => { 
+                if (!isLocked && myHp > 0 && e.target.id !== 'respawn-btn') {
+                    document.body.requestPointerLock();
+                }
             });
             document.addEventListener('pointerlockchange', () => isLocked = document.pointerLockElement === document.body);
             document.addEventListener('mousemove', onMouseMove);
@@ -82,26 +120,35 @@
             document.addEventListener('mousedown', shoot);
             window.addEventListener('resize', onWindowResize);
 
+            document.getElementById('respawn-btn').addEventListener('click', respawn);
+
             animate();
         }
 
+        // Vylepšená zbraň
         function createPlayerGun() {
             gunGroup = new THREE.Group();
             
-            const gunMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.2 });
-            const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.4), gunMat);
+            const darkMetal = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.2 });
+            const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.45), darkMetal);
             
-            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.3), gunMat);
+            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.35), darkMetal);
             barrel.rotation.x = Math.PI / 2;
-            barrel.position.set(0, 0.02, -0.3);
+            barrel.position.set(0, 0.02, -0.35);
 
-            gunGroup.add(gunBody, barrel);
+            // Zásobník
+            const magMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
+            const mag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.08), magMat);
+            mag.position.set(0, -0.1, -0.05);
+            mag.rotation.x = 0.2;
+
+            gunGroup.add(gunBody, barrel, mag);
 
             const flashGeo = new THREE.ConeGeometry(0.06, 0.2, 8);
             const flashMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0 });
             muzzleFlash = new THREE.Mesh(flashGeo, flashMat);
             muzzleFlash.rotation.x = -Math.PI / 2;
-            muzzleFlash.position.set(0, 0.02, -0.45);
+            muzzleFlash.position.set(0, 0.02, -0.52);
             gunGroup.add(muzzleFlash);
 
             gunGroup.position.set(0.2, -0.18, -0.4);
@@ -127,12 +174,48 @@
             scene.add(wall);
         }
 
+        // Pokročilejší 3D model protihráče
         function createEnemyMesh() {
             const group = new THREE.Group();
-            const mat = new THREE.MeshStandardMaterial({ color: 0xd97706 });
-            const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.6, 0.5), mat);
-            body.position.y = 0.8;
-            group.add(body);
+            
+            const suitMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 });
+            const vestMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
+            const visorMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, metalness: 0.9, roughness: 0.1 });
+            const gunMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8 });
+
+            // Tělo
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.85, 0.35), suitMat);
+            body.position.y = 0.85;
+
+            // Taktická vesta a Batoh
+            const vest = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.55, 0.4), vestMat);
+            vest.position.y = 0.9;
+
+            const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.2), vestMat);
+            backpack.position.set(0, 0.9, 0.28);
+
+            // Hlava s přilbou
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.32), vestMat);
+            head.position.y = 1.55;
+
+            // Svítící vizor
+            const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.05), visorMat);
+            visor.position.set(0, 1.57, -0.16);
+
+            // Ruce drží zbraň
+            const armL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.55, 0.14), suitMat);
+            armL.position.set(-0.35, 0.9, -0.1);
+            armL.rotation.x = -Math.PI / 4;
+
+            const armR = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.55, 0.14), suitMat);
+            armR.position.set(0.35, 0.9, -0.1);
+            armR.rotation.x = -Math.PI / 4;
+
+            // Zbraň v ruce
+            const enemyGun = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.5), gunMat);
+            enemyGun.position.set(0.18, 0.88, -0.35);
+
+            group.add(body, vest, backpack, head, visor, armL, armR, enemyGun);
             scene.add(group);
             return group;
         }
@@ -167,6 +250,10 @@
                 if (data.hitPlayerId === socket.id && myHp > 0) {
                     myHp -= 25;
                     document.getElementById('hp').innerText = Math.max(0, myHp);
+                    if (myHp <= 0) {
+                        document.exitPointerLock();
+                        document.getElementById('death-screen').classList.remove('hidden');
+                    }
                 }
             });
 
@@ -178,11 +265,43 @@
             });
         }
 
+        function reload() {
+            if (isReloading || ammo === maxAmmo) return;
+            isReloading = true;
+            
+            // Animace přebití (sklopení zbraně)
+            let startRot = gunGroup.rotation.x;
+            gunGroup.rotation.x = -0.8;
+
+            document.getElementById('ammo').innerText = "RELOAD";
+
+            setTimeout(() => {
+                ammo = maxAmmo;
+                document.getElementById('ammo').innerText = ammo;
+                gunGroup.rotation.x = startRot;
+                isReloading = false;
+            }, 1200);
+        }
+
+        function respawn() {
+            myHp = 100;
+            ammo = maxAmmo;
+            document.getElementById('hp').innerText = myHp;
+            document.getElementById('ammo').innerText = ammo;
+            document.getElementById('death-screen').classList.add('hidden');
+            
+            yawObject.position.x = (Math.random() - 0.5) * 40;
+            yawObject.position.z = (Math.random() - 0.5) * 40;
+
+            document.body.requestPointerLock();
+        }
+
         function handleKey(code, state) {
             if (code === 'KeyW') moveForward = state;
             if (code === 'KeyS') moveBackward = state;
             if (code === 'KeyA') moveLeft = state;
             if (code === 'KeyD') moveRight = state;
+            if (code === 'KeyR' && state) reload();
         }
 
         function onMouseMove(e) {
@@ -193,13 +312,19 @@
 
             yawObject.rotation.y -= movementX * 0.002;
             pitchObject.rotation.x -= movementY * 0.002;
-
-            // Omezení pohledu nahoru a dolů (zabrání převrácení přes hlavu)
             pitchObject.rotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitchObject.rotation.x));
         }
 
         function shoot() {
-            if (!isLocked || myHp <= 0) return;
+            if (!isLocked || myHp <= 0 || isReloading) return;
+
+            if (ammo <= 0) {
+                reload();
+                return;
+            }
+
+            ammo--;
+            document.getElementById('ammo').innerText = ammo;
 
             muzzleFlash.material.opacity = 1;
             flashTimer = 0.05;
@@ -229,7 +354,6 @@
             if (isLocked && myHp > 0) {
                 const speed = 12.0 * delta;
 
-                // Správný FPS pohyb v relativním směru pohledu
                 if (moveForward) yawObject.translateZ(-speed);
                 if (moveBackward) yawObject.translateZ(speed);
                 if (moveLeft) yawObject.translateX(-speed);
