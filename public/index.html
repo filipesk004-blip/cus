@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <title>Multiplayer Siege 3D</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: monospace; }
+        #crosshair {
+            position: absolute; top: 50%; left: 50%;
+            width: 8px; height: 8px; transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #00ffcc; }
+        #crosshair::before { top: 3px; left: -6px; width: 20px; height: 2px; }
+        #crosshair::after { top: -6px; left: 3px; width: 2px; height: 20px; }
+    </style>
+</head>
+<body class="select-none">
+    <div id="crosshair"></div>
+    <div class="fixed top-4 left-4 z-10 text-white space-y-1 pointer-events-none bg-black/80 p-4 rounded-lg border border-slate-700">
+        <h1 class="text-amber-400 font-bold text-sm mb-1">RAILWAY MULTIPLAYER SIEGE</h1>
+        <div>Klikni pro aktivaci | Pohyb: <span class="text-amber-300">WASD</span> | Střelba: <span class="text-amber-300">LMB</span></div>
+        <div class="pt-2 text-xs">HP: <span id="hp" class="text-emerald-400 font-bold">100</span></div>
+    </div>
+
+    <div id="game-container" class="w-full h-screen"></div>
+
+    <script>
+        const socket = io();
+        let scene, camera, renderer;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let prevTime = performance.now();
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+
+        let myHp = 100;
+        let otherPlayers = {};
+        let isLocked = false;
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0f1d);
+            scene.fog = new THREE.FogExp2(0x0a0f1d, 0.025);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.6, 20);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('game-container').appendChild(renderer.domElement);
+
+            const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambient);
+
+            // Podlaha a obvodové zdi
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+            floor.rotation.x = -Math.PI / 2;
+            scene.add(floor);
+
+            setupSocketListeners();
+
+            document.body.addEventListener('click', () => { if (!isLocked) document.body.requestPointerLock(); });
+            document.addEventListener('pointerlockchange', () => isLocked = document.pointerLockElement === document.body);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('keydown', (e) => handleKey(e.code, true));
+            document.addEventListener('keyup', (e) => handleKey(e.code, false));
+            document.addEventListener('mousedown', shoot);
+
+            animate();
+        }
+
+        function createEnemyMesh() {
+            const group = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.8, 0.4), new THREE.MeshStandardMaterial({ color: 0xef4444 }));
+            body.position.y = 0.9;
+            group.add(body);
+            scene.add(group);
+            return group;
+        }
+
+        function setupSocketListeners() {
+            socket.on('currentPlayers', (players) => {
+                Object.keys(players).forEach((id) => {
+                    if (id !== socket.id) {
+                        otherPlayers[id] = createEnemyMesh();
+                        otherPlayers[id].position.set(players[id].x, 0, players[id].z);
+                    }
+                });
+            });
+
+            socket.on('newPlayer', (data) => {
+                otherPlayers[data.id] = createEnemyMesh();
+                otherPlayers[data.id].position.set(data.player.x, 0, data.player.z);
+            });
+
+            socket.on('playerMoved', (data) => {
+                if (otherPlayers[data.id]) {
+                    otherPlayers[data.id].position.x = data.player.x;
+                    otherPlayers[data.id].position.z = data.player.z;
+                    otherPlayers[data.id].rotation.y = data.player.rotation;
+                }
+            });
+
+            socket.on('playerShot', (data) => {
+                if (data.hitPlayerId === socket.id) {
+                    myHp -= 25;
+                    document.getElementById('hp').innerText = Math.max(0, myHp);
+                    if (myHp <= 0) alert("BYL JSI ZABIT PROTIHRÁČEM!");
+                }
+            });
+
+            socket.on('playerDisconnected', (id) => {
+                if (otherPlayers[id]) {
+                    scene.remove(otherPlayers[id]);
+                    delete otherPlayers[id];
+                }
+            });
+        }
+
+        function handleKey(code, state) {
+            if (code === 'KeyW') moveForward = state;
+            if (code === 'KeyS') moveBackward = state;
+            if (code === 'KeyA') moveLeft = state;
+            if (code === 'KeyD') moveRight = state;
+        }
+
+        function onMouseMove(e) {
+            if (!isLocked) return;
+            camera.rotation.y -= e.movementX * 0.002;
+        }
+
+        function shoot() {
+            if (!isLocked) return;
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+            Object.keys(otherPlayers).forEach((id) => {
+                const hits = raycaster.intersectObject(otherPlayers[id], true);
+                if (hits.length > 0) {
+                    socket.emit('shoot', { hitPlayerId: id });
+                }
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+            prevTime = time;
+
+            if (isLocked) {
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize();
+
+                if (moveForward || moveBackward) velocity.z -= direction.z * 50.0 * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * 50.0 * delta;
+
+                camera.translateX(-velocity.x * delta);
+                camera.translateZ(velocity.z * delta);
+                camera.position.y = 1.6;
+
+                // Posílání pozice na server
+                socket.emit('playerMove', {
+                    x: camera.position.x,
+                    z: camera.position.z,
+                    rotation: camera.rotation.y
+                });
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>
