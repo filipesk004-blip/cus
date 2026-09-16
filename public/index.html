@@ -2,7 +2,7 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS Siege - Tactical</title>
+    <title>3D FPS Siege - Tactical Enhanced</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
@@ -26,7 +26,6 @@
             box-shadow: inset 0 0 120px rgba(239, 68, 68, 0.8);
         }
 
-        /* Oslepení od Flashbangu */
         #flashbang-overlay {
             position: fixed; inset: 0; pointer-events: none; z-index: 40;
             background: white; opacity: 0;
@@ -44,6 +43,7 @@
         <h1 class="text-amber-400 font-black tracking-wider text-sm mb-1 uppercase">Siege 3D Tactical</h1>
         <div class="text-xs text-slate-300 space-y-0.5">
             <div>Pohyb: <span class="text-amber-400 font-bold">WASD</span> | Běh: <span class="text-amber-400 font-bold">Shift</span></div>
+            <div>Skok: <span class="text-amber-400 font-bold">Space</span> | Skrčení: <span class="text-amber-400 font-bold">Ctrl / C</span></div>
             <div>Střelba: <span class="text-amber-400 font-bold">LMB</span> | Scope: <span class="text-amber-400 font-bold">RMB</span></div>
             <div>Flashbang: <span class="text-amber-400 font-bold">G</span> | Přebití: <span class="text-amber-400 font-bold">R</span></div>
         </div>
@@ -94,11 +94,18 @@
     <script>
         const socket = io();
         let scene, camera, renderer;
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, isSprinting = false;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, isSprinting = false, isCrouching = false;
         let prevTime = performance.now();
 
         let yawObject, pitchObject;
         let myHp = 100;
+
+        // Fyzika skoku a skrčení
+        let yVelocity = 0;
+        let isGrounded = true;
+        const standingHeight = 1.6;
+        const crouchingHeight = 0.9;
+        let targetEyeHeight = standingHeight;
 
         const WEAPONS = {
             rifle: { name: 'Útočná Puška', maxAmmo: 30, damage: 25, fireRate: 150, zoomFov: 55, bodyPos: [0.2, -0.18, -0.4], aimPos: [0, -0.12, -0.3] },
@@ -117,6 +124,7 @@
         let otherPlayers = {};
         let obstacles = [];
         let bullets = [];
+        let activeGrenades = [];
         let rifleGroup, sniperGroup, currentGunGroup, muzzleFlash;
         let flashTimer = 0;
         let isLocked = false;
@@ -131,7 +139,7 @@
             pitchObject.add(camera);
 
             yawObject = new THREE.Object3D();
-            yawObject.position.y = 1.6;
+            yawObject.position.y = standingHeight;
             yawObject.add(pitchObject);
             scene.add(yawObject);
 
@@ -167,6 +175,24 @@
             document.getElementById('respawn-btn').addEventListener('click', respawn);
 
             animate();
+        }
+
+        // Vytvoření procedurální mřížkové textury
+        function createGridTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(0, 0, 256, 256);
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(0, 0, 256, 256);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            return texture;
         }
 
         function createPlayerGuns() {
@@ -236,13 +262,18 @@
         }
 
         function buildMap() {
-            const floorMat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
+            const gridTex = createGridTexture();
+            gridTex.repeat.set(30, 30);
+            
+            const floorMat = new THREE.MeshStandardMaterial({ map: gridTex, roughness: 0.8 });
             const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), floorMat);
             floor.rotation.x = -Math.PI / 2;
             scene.add(floor);
 
-            const wallMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
-            const crateMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 });
+            const wallTex = createGridTexture();
+            wallTex.repeat.set(10, 2);
+            const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.6 });
+            const crateMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.7 });
 
             createObstacle(0, 2.5, -30, 60, 5, 1, wallMat);
             createObstacle(0, 2.5, 30, 60, 5, 1, wallMat);
@@ -335,21 +366,44 @@
                 }
             });
 
-            // Přijetí výbuchu Flashbangu
-            socket.on('flashbangExploded', (data) => {
-                const myPos = yawObject.position;
-                const dist = Math.hypot(myPos.x - data.x, myPos.z - data.z);
+            // Síťové vytvoření 3D granátu od ostatních hráčů
+            socket.on('spawnFlashbang', (data) => {
+                spawnVisualGrenade(data.pos, data.velocity, false);
+            });
 
-                if (dist < 20 && myHp > 0) {
-                    const flashOverlay = document.getElementById('flashbang-overlay');
-                    flashOverlay.style.opacity = '1';
-                    
-                    // Plynulé odznívání bělosti
-                    setTimeout(() => {
-                        flashOverlay.style.transition = 'opacity 3s ease-out';
-                        flashOverlay.style.opacity = '0';
-                        setTimeout(() => flashOverlay.style.transition = 'opacity 0.1s ease-out', 3000);
-                    }, 500);
+            // Výbuch Flashbangu a výpočet oslepení podle smyslového pohledu
+            socket.on('flashbangDetonated', (data) => {
+                const myPos = yawObject.position.clone();
+                const flashPos = new THREE.Vector3(data.x, data.y, data.z);
+                const dist = myPos.distanceTo(flashPos);
+
+                if (dist < 22 && myHp > 0) {
+                    const camDir = new THREE.Vector3();
+                    camera.getWorldDirection(camDir);
+
+                    const dirToFlash = flashPos.clone().sub(myPos).normalize();
+                    const dot = camDir.dot(dirToFlash); // 1 = přímý pohled, -1 = zcela zády
+
+                    let intensity = 0;
+                    if (dot > 0.2) {
+                        intensity = (dist < 10) ? 1.0 : (1.0 - (dist - 10) / 12);
+                    } else if (dot > -0.3) {
+                        intensity = 0.3; // Částečný záblesk na periferii
+                    } else {
+                        intensity = 0.08; // Jen záblesk světla zpozadí
+                    }
+
+                    if (intensity > 0.05) {
+                        const flashOverlay = document.getElementById('flashbang-overlay');
+                        flashOverlay.style.opacity = intensity.toString();
+                        
+                        const duration = Math.max(1000, 4500 * intensity);
+                        setTimeout(() => {
+                            flashOverlay.style.transition = `opacity ${duration / 1000}s ease-out`;
+                            flashOverlay.style.opacity = '0';
+                            setTimeout(() => flashOverlay.style.transition = 'opacity 0.1s ease-out', duration);
+                        }, 200);
+                    }
                 }
             });
 
@@ -368,7 +422,6 @@
 
             tracer.position.copy(startPos);
             
-            // Otočení kuličky ve směru dráhy
             const targetPos = startPos.clone().add(dirVector);
             tracer.lookAt(targetPos);
             tracer.rotateX(Math.PI / 2);
@@ -383,6 +436,21 @@
             });
         }
 
+        function spawnVisualGrenade(pos, velocity, isMaster) {
+            const gGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.15, 8);
+            const gMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.5 });
+            const mesh = new THREE.Mesh(gGeo, gMat);
+            mesh.position.copy(pos);
+            scene.add(mesh);
+
+            activeGrenades.push({
+                mesh: mesh,
+                velocity: new THREE.Vector3(velocity.x, velocity.y, velocity.z),
+                timer: 2.2, // Časovač výbuchu v sekundách
+                isMaster: isMaster
+            });
+        }
+
         function throwFlashbang() {
             if (!isLocked || myHp <= 0) return;
 
@@ -391,10 +459,17 @@
             
             const dir = new THREE.Vector3();
             camera.getWorldDirection(dir);
+            
+            startPos.add(dir.clone().multiplyScalar(0.5));
+            const velocity = dir.multiplyScalar(14);
+            velocity.y += 3; // Mírný oblouk nahoru
 
-            // Výpočet dopadu granátu dopředu
-            const targetPos = startPos.clone().add(dir.multiplyScalar(10));
-            socket.emit('throwFlashbang', { x: targetPos.x, z: targetPos.z });
+            spawnVisualGrenade(startPos, velocity, true);
+
+            socket.emit('throwFlashbang', {
+                pos: { x: startPos.x, y: startPos.y, z: startPos.z },
+                velocity: { x: velocity.x, y: velocity.y, z: velocity.z }
+            });
         }
 
         function reload() {
@@ -435,6 +510,13 @@
             if (code === 'KeyA') moveLeft = state;
             if (code === 'KeyD') moveRight = state;
             if (code === 'ShiftLeft' || code === 'ShiftRight') isSprinting = state;
+            if (code === 'ControlLeft' || code === 'KeyC') isCrouching = state;
+            
+            if (code === 'Space' && state && isGrounded && !isCrouching) {
+                yVelocity = 6.0;
+                isGrounded = false;
+            }
+
             if (code === 'KeyR' && state) reload();
             if (code === 'KeyG' && state) throwFlashbang();
             if (code === 'Digit1' && state) switchWeapon('rifle');
@@ -471,9 +553,10 @@
 
         function checkCollision(newPosition) {
             const playerRadius = 0.5;
+            const currentH = isCrouching ? crouchingHeight : standingHeight;
             const playerBox = new THREE.Box3(
-                new THREE.Vector3(newPosition.x - playerRadius, 0, newPosition.z - playerRadius),
-                new THREE.Vector3(newPosition.x + playerRadius, 2, newPosition.z + playerRadius)
+                new THREE.Vector3(newPosition.x - playerRadius, newPosition.y - currentH, newPosition.z - playerRadius),
+                new THREE.Vector3(newPosition.x + playerRadius, newPosition.y, newPosition.z + playerRadius)
             );
 
             for (let i = 0; i < obstacles.length; i++) {
@@ -501,7 +584,6 @@
             muzzleFlash.material.opacity = 1;
             flashTimer = 0.05;
 
-            // Vytvoření Bullet Trace
             const gunWorldPos = new THREE.Vector3();
             muzzleFlash.getWorldPosition(gunWorldPos);
 
@@ -529,7 +611,7 @@
                 if (flashTimer <= 0) muzzleFlash.material.opacity = 0;
             }
 
-            // Aktualizace pohybu nábojů (Bullet Tracer)
+            // Pohyb projektilů
             for (let i = bullets.length - 1; i >= 0; i--) {
                 const b = bullets[i];
                 const moveStep = 90 * delta;
@@ -542,7 +624,56 @@
                 }
             }
 
-            // Plynulý Zoom / Scope
+            // Pohyb a fyzika 3D Flashbangů
+            for (let i = activeGrenades.length - 1; i >= 0; i--) {
+                const g = activeGrenades[i];
+                g.timer -= delta;
+                
+                // Gravitace a posun
+                g.velocity.y -= 15.0 * delta;
+                g.mesh.position.addScaledVector(g.velocity, delta);
+                g.mesh.rotation.x += 5 * delta;
+                g.mesh.rotation.z += 5 * delta;
+
+                // Odraz od podlahy
+                if (g.mesh.position.y <= 0.08) {
+                    g.mesh.position.y = 0.08;
+                    g.velocity.y *= -0.4;
+                    g.velocity.x *= 0.6;
+                    g.velocity.z *= 0.6;
+                }
+
+                if (g.timer <= 0) {
+                    if (g.isMaster) {
+                        socket.emit('flashbangExploded', {
+                            x: g.mesh.position.x,
+                            y: g.mesh.position.y,
+                            z: g.mesh.position.z
+                        });
+                    }
+                    scene.remove(g.mesh);
+                    activeGrenades.splice(i, 1);
+                }
+            }
+
+            // Výška kamery (skrčení)
+            targetEyeHeight = isCrouching ? crouchingHeight : standingHeight;
+
+            // Vertikální pohyb (skákání a gravitace)
+            if (!isGrounded) {
+                yawObject.position.y += yVelocity * delta;
+                yVelocity -= 18.0 * delta;
+
+                if (yawObject.position.y <= targetEyeHeight) {
+                    yawObject.position.y = targetEyeHeight;
+                    yVelocity = 0;
+                    isGrounded = true;
+                }
+            } else {
+                yawObject.position.y += (targetEyeHeight - yawObject.position.y) * 0.2;
+            }
+
+            // Zoom kamery a offset zbraně
             const targetFov = isAiming ? WEAPONS[currentWeaponKey].zoomFov : 75;
             const targetPos = isAiming ? WEAPONS[currentWeaponKey].aimPos : WEAPONS[currentWeaponKey].bodyPos;
 
@@ -557,10 +688,14 @@
                 const isMoving = moveForward || moveBackward || moveLeft || moveRight;
                 let speedMultiplier = isAiming ? 3.0 : 5.0;
 
-                if (isSprinting && isMoving && stamina > 0 && !isAiming) {
+                if (isCrouching) {
+                    speedMultiplier = 2.2;
+                } else if (isSprinting && isMoving && stamina > 0 && !isAiming) {
                     speedMultiplier = 9.0;
                     stamina = Math.max(0, stamina - delta * 35);
-                } else if (!isSprinting && stamina < maxStamina) {
+                }
+
+                if (!isSprinting && stamina < maxStamina) {
                     stamina = Math.min(maxStamina, stamina + delta * 20);
                 }
 
