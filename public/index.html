@@ -2,12 +2,12 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS Siege - Tactical Enhanced</title>
+    <title>3D FPS Siege - Full-Auto & Crouch Anims</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #0a0f1d; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { margin: 0; overflow: hidden; background: #0a0f1d; font-family: 'Segoe UI', sans-serif; }
         #crosshair {
             position: absolute; top: 50%; left: 50%;
             width: 8px; height: 8px; transform: translate(-50%, -50%);
@@ -17,7 +17,6 @@
         #crosshair::before { top: 3px; left: -6px; width: 20px; height: 2px; }
         #crosshair::after { top: -6px; left: 3px; width: 2px; height: 20px; }
         
-        /* Hitmark Efekt */
         #hitmark {
             position: absolute; top: 50%; left: 50%;
             width: 16px; height: 16px; transform: translate(-50%, -50%) rotate(45deg);
@@ -27,7 +26,6 @@
         #hitmark::before { top: 7px; left: -2px; width: 20px; height: 2px; }
         #hitmark::after { top: -2px; left: 7px; width: 2px; height: 20px; }
 
-        /* Kill Indicator uprostřed */
         #kill-notify {
             position: absolute; top: 58%; left: 50%;
             transform: translate(-50%, -50%);
@@ -40,14 +38,11 @@
             box-shadow: inset 0 0 100px rgba(239, 68, 68, 0);
             transition: box-shadow 0.1s ease-out;
         }
-        #hit-vignette.active {
-            box-shadow: inset 0 0 120px rgba(239, 68, 68, 0.8);
-        }
+        #hit-vignette.active { box-shadow: inset 0 0 120px rgba(239, 68, 68, 0.8); }
 
         #flashbang-overlay {
             position: fixed; inset: 0; pointer-events: none; z-index: 40;
-            background: white; opacity: 0;
-            transition: opacity 0.1s ease-out;
+            background: white; opacity: 0; transition: opacity 0.1s ease-out;
         }
     </style>
 </head>
@@ -55,7 +50,6 @@
     <div id="crosshair"></div>
     <div id="hitmark"></div>
     
-    <!-- Kill Notifikace uprostřed obrazovky -->
     <div id="kill-notify" class="text-center">
         <div class="text-red-500 font-black text-2xl tracking-widest drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">ELIMINOVÁN</div>
         <div class="text-amber-400 font-bold text-sm tracking-wide">+100 SKÓRE</div>
@@ -64,47 +58,39 @@
     <div id="hit-vignette"></div>
     <div id="flashbang-overlay"></div>
     
-    <!-- Horní nápověda -->
     <div class="fixed top-4 left-4 z-10 text-white pointer-events-none bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700/80 shadow-2xl">
         <h1 class="text-amber-400 font-black tracking-wider text-sm mb-1 uppercase">Siege 3D Tactical</h1>
         <div class="text-xs text-slate-300 space-y-0.5">
             <div>Pohyb: <span class="text-amber-400 font-bold">WASD</span> | Běh: <span class="text-amber-400 font-bold">Shift</span></div>
             <div>Skok: <span class="text-amber-400 font-bold">Space</span> | Skrčení: <span class="text-amber-400 font-bold">Ctrl / C</span></div>
-            <div>Střelba: <span class="text-amber-400 font-bold">LMB</span> | Scope: <span class="text-amber-400 font-bold">RMB</span></div>
-            <div>Flashbang: <span class="text-amber-400 font-bold">G</span> | Přebití: <span class="text-amber-400 font-bold">R</span></div>
+            <div>Střelba (Auto): <span class="text-amber-400 font-bold">Držet LMB</span> | Scope: <span class="text-amber-400 font-bold">RMB</span></div>
+            <div>Zbraně: <span class="text-amber-400 font-bold">1 / 2</span> | Flashbang: <span class="text-amber-400 font-bold">G</span></div>
         </div>
     </div>
 
-    <!-- Scoreboard & Kill Feed vpravo nahoře -->
     <div class="fixed top-4 right-4 z-10 pointer-events-none flex flex-col items-end gap-3">
         <div class="bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700/80 shadow-2xl min-w-[200px]">
             <h2 class="text-xs font-black tracking-widest text-slate-400 uppercase mb-2 border-b border-slate-700 pb-1">TABULKA SKÓRE</h2>
             <div id="scoreboard-list" class="space-y-1 text-xs font-semibold"></div>
         </div>
-        
-        <!-- Kill Feed -->
         <div id="kill-feed" class="flex flex-col items-end space-y-1 text-xs font-bold"></div>
     </div>
 
-    <!-- HUD vpravo dole -->
     <div class="fixed bottom-6 right-6 z-10 pointer-events-none flex items-center gap-4 bg-slate-900/90 backdrop-blur-md px-6 py-4 rounded-2xl border border-slate-700/80 shadow-2xl">
         <div class="flex flex-col items-end border-r border-slate-700 pr-4">
             <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Zbraň</span>
-            <span id="weapon-name" class="text-lg font-black text-amber-400 uppercase">Rifle</span>
+            <span id="weapon-name" class="text-lg font-black text-amber-400 uppercase">M4A1 Custom</span>
         </div>
-
         <div class="flex flex-col items-end border-r border-slate-700 pr-4 w-20">
             <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Flashbang</span>
             <span id="flash-count" class="text-xl font-black text-amber-400">2 / 2</span>
         </div>
-
         <div class="flex flex-col items-end border-r border-slate-700 pr-4 w-24">
             <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Stamina</span>
             <div class="w-full bg-slate-800 h-2 rounded-full mt-2 overflow-hidden border border-slate-700">
                 <div id="stamina-bar" class="bg-amber-400 h-full w-full transition-all duration-75"></div>
             </div>
         </div>
-
         <div class="flex flex-col items-end border-r border-slate-700 pr-4">
             <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Zdraví</span>
             <div class="flex items-baseline gap-1">
@@ -112,7 +98,6 @@
                 <span class="text-xs font-bold text-slate-500">/ 100</span>
             </div>
         </div>
-
         <div class="flex flex-col items-start pl-1 min-w-[70px]">
             <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Munice</span>
             <div class="flex items-baseline gap-1">
@@ -122,7 +107,6 @@
         </div>
     </div>
 
-    <!-- Death Screen -->
     <div id="death-screen" class="hidden fixed inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md text-white">
         <h2 class="text-5xl font-black text-red-500 tracking-wider mb-2">BYL JSI ELIMINOVÁN</h2>
         <p class="text-slate-400 mb-6">Příště buď rychlejší na spoušti.</p>
@@ -151,14 +135,15 @@
         let targetEyeHeight = standingHeight;
 
         const WEAPONS = {
-            rifle: { name: 'Útočná Puška', maxAmmo: 30, damage: 25, fireRate: 150, zoomFov: 55, bodyPos: [0.2, -0.18, -0.4], aimPos: [0, -0.12, -0.3] },
-            sniper: { name: 'Sniperka', maxAmmo: 5, damage: 50, fireRate: 800, zoomFov: 20, bodyPos: [0.2, -0.2, -0.45], aimPos: [0, -0.14, -0.3] }
+            m4: { name: 'M4A1 Custom', maxAmmo: 30, damage: 18, fireRate: 90, auto: true, zoomFov: 50, bodyPos: [0.2, -0.2, -0.4], aimPos: [0, -0.14, -0.26] },
+            sniper: { name: 'Sniperka', maxAmmo: 5, damage: 65, fireRate: 850, auto: false, zoomFov: 20, bodyPos: [0.24, -0.24, -0.48], aimPos: [0, -0.16, -0.26] }
         };
 
-        let currentWeaponKey = 'rifle';
-        let ammoState = { rifle: 30, sniper: 5 };
+        let currentWeaponKey = 'm4';
+        let ammoState = { m4: 30, sniper: 5 };
         let isReloading = false;
         let isAiming = false;
+        let isMouseDown = false;
         let lastShotTime = 0;
 
         let stamina = 100;
@@ -168,10 +153,14 @@
         let obstacles = [];
         let bullets = [];
         let activeGrenades = [];
-        let rifleGroup, sniperGroup, currentGunGroup, muzzleFlash;
+        let m4Group, sniperGroup, currentGunGroup, muzzleFlash;
         let flashTimer = 0;
         let hitmarkTimeout = null, killNotifyTimeout = null;
         let isLocked = false;
+
+        let swayX = 0, swayY = 0;
+        let bobTimer = 0;
+        let recoilOffset = 0;
 
         function init() {
             scene = new THREE.Scene();
@@ -233,42 +222,98 @@
             return texture;
         }
 
+        /* --- STAVBA M4A1 A SNIPERKY --- */
         function createPlayerGuns() {
-            const darkMetal = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.2 });
-            const magMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
-            const scopeMat = new THREE.MeshStandardMaterial({ color: 0x050505, metalness: 0.9, roughness: 0.1 });
+            const darkMetal = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.85, roughness: 0.2 });
+            const blackSteel = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.1 });
+            const tanStock = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.5 });
+            const scopeGlass = new THREE.MeshStandardMaterial({ color: 0x00ffcc, metalness: 1.0, roughness: 0.0 });
 
-            rifleGroup = new THREE.Group();
-            const rBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.45), darkMetal);
-            const rBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.35), darkMetal);
-            rBarrel.rotation.x = Math.PI / 2; rBarrel.position.set(0, 0.02, -0.35);
-            const rMag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.08), magMat);
-            rMag.position.set(0, -0.1, -0.05); rMag.rotation.x = 0.2;
-            rifleGroup.add(rBody, rBarrel, rMag);
+            // M4A1 Full-Auto Puška
+            m4Group = new THREE.Group();
+            const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, 0.28), darkMetal);
+            const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.05, 0.25), blackSteel);
+            handguard.position.set(0, 0, -0.22);
+            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.2), blackSteel);
+            barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0, -0.42);
+            const stock = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, 0.2), tanStock);
+            stock.position.set(0, -0.01, 0.22);
+            const grip = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.1, 0.04), blackSteel);
+            grip.position.set(0, -0.08, 0.04); grip.rotation.x = -0.35;
+            const foregrip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, 0.03), blackSteel);
+            foregrip.position.set(0, -0.06, -0.2);
+            const mag = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.16, 0.06), blackSteel);
+            mag.position.set(0, -0.1, -0.04); mag.rotation.x = 0.2;
 
+            // Red Dot / Optika pro M4
+            const sightBase = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.08), blackSteel);
+            sightBase.position.set(0, 0.055, -0.02);
+            const sightGlass = new THREE.Mesh(new THREE.RingGeometry(0.015, 0.02, 16), scopeGlass);
+            sightGlass.position.set(0, 0.08, -0.02);
+
+            m4Group.add(receiver, handguard, barrel, stock, grip, foregrip, mag, sightBase, sightGlass);
+
+            // Odstřelovací Puška
             sniperGroup = new THREE.Group();
-            const sBody = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 0.65), darkMetal);
-            const sBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.55), darkMetal);
-            sBarrel.rotation.x = Math.PI / 2; sBarrel.position.set(0, 0.03, -0.55);
-            const sScope = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.25), scopeMat);
-            sScope.rotation.x = Math.PI / 2; sScope.position.set(0, 0.1, -0.1);
-            const sMag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.1), magMat);
-            sMag.position.set(0, -0.11, -0.1);
-            sniperGroup.add(sBody, sBarrel, sScope, sMag);
+            const sReceiver = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.11, 0.45), darkMetal);
+            const sBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.55), blackSteel);
+            sBarrel.rotation.x = Math.PI / 2; sBarrel.position.set(0, 0.02, -0.48);
+            const sStock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.28), tanStock);
+            sStock.position.set(0, -0.01, 0.3);
+            const sScopeBody = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.28), blackSteel);
+            sScopeBody.rotation.x = Math.PI / 2; sScopeBody.position.set(0, 0.1, -0.05);
+            const sScopeLens = new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.027, 0.01), scopeGlass);
+            sScopeLens.rotation.x = Math.PI / 2; sScopeLens.position.set(0, 0.1, -0.19);
+            const sMag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.08), blackSteel);
+            sMag.position.set(0, -0.1, -0.08);
 
-            const flashGeo = new THREE.ConeGeometry(0.06, 0.2, 8);
+            sniperGroup.add(sReceiver, sBarrel, sStock, sScopeBody, sScopeLens, sMag);
+
+            // Muzzle Flash
+            const flashGeo = new THREE.ConeGeometry(0.05, 0.18, 8);
             const flashMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0 });
             muzzleFlash = new THREE.Mesh(flashGeo, flashMat);
             muzzleFlash.rotation.x = -Math.PI / 2;
 
-            rifleGroup.position.set(...WEAPONS.rifle.bodyPos);
+            m4Group.position.set(...WEAPONS.m4.bodyPos);
             sniperGroup.position.set(...WEAPONS.sniper.bodyPos);
             sniperGroup.visible = false;
 
-            camera.add(rifleGroup, sniperGroup);
-            currentGunGroup = rifleGroup;
+            camera.add(m4Group, sniperGroup);
+            currentGunGroup = m4Group;
             currentGunGroup.add(muzzleFlash);
-            muzzleFlash.position.set(0, 0.02, -0.52);
+            muzzleFlash.position.set(0, 0.0, -0.52);
+        }
+
+        /* --- HRÁČSKEJ MODEL S FYZICKÝM SKRČENÍM --- */
+        function createEnemyMesh() {
+            const group = new THREE.Group();
+            const suitMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 });
+            const vestMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
+            const helmetMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.3 });
+            const visorMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, metalness: 0.9, roughness: 0.1 });
+
+            // Pivot pro tělo (umožňuje ohýbání v pase při kleknutí)
+            const bodyPivot = new THREE.Group(); bodyPivot.name = "bodyPivot";
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.3), suitMat); body.position.y = 0.4;
+            const vest = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.45, 0.35), vestMat); vest.position.y = 0.45;
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.28), suitMat); head.position.y = 1.0;
+            const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.32), helmetMat); helmet.position.y = 1.08;
+            const visor = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.07, 0.05), visorMat); visor.position.set(0, 1.01, -0.15);
+
+            const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.12), suitMat); leftArm.position.set(-0.33, 0.4, 0); leftArm.name = "leftArm";
+            const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.12), suitMat); rightArm.position.set(0.33, 0.4, 0); rightArm.name = "rightArm";
+
+            bodyPivot.add(body, vest, head, helmet, visor, leftArm, rightArm);
+            bodyPivot.position.y = 0.5;
+
+            // Nohy
+            const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.55, 0.18), vestMat); leftLeg.position.set(-0.16, 0.27, 0); leftLeg.name = "leftLeg";
+            const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.55, 0.18), vestMat); rightLeg.position.set(0.16, 0.27, 0); rightLeg.name = "rightLeg";
+
+            group.add(bodyPivot, leftLeg, rightLeg);
+            scene.add(group);
+            return group;
         }
 
         function switchWeapon(key) {
@@ -276,15 +321,15 @@
             isAiming = false; camera.fov = 75; camera.updateProjectionMatrix();
 
             currentGunGroup.remove(muzzleFlash);
-            rifleGroup.visible = false; sniperGroup.visible = false;
+            m4Group.visible = false; sniperGroup.visible = false;
 
             currentWeaponKey = key;
-            currentGunGroup = currentWeaponKey === 'rifle' ? rifleGroup : sniperGroup;
+            currentGunGroup = currentWeaponKey === 'm4' ? m4Group : sniperGroup;
             currentGunGroup.visible = true;
             currentGunGroup.position.set(...WEAPONS[currentWeaponKey].bodyPos);
             
             currentGunGroup.add(muzzleFlash);
-            muzzleFlash.position.set(0, 0.02, currentWeaponKey === 'rifle' ? -0.52 : -0.85);
+            muzzleFlash.position.set(0, 0, currentWeaponKey === 'm4' ? -0.52 : -0.76);
 
             document.getElementById('weapon-name').innerText = WEAPONS[currentWeaponKey].name;
             document.getElementById('ammo').innerText = ammoState[currentWeaponKey];
@@ -320,20 +365,6 @@
             obstacles.push(new THREE.Box3().setFromObject(mesh));
         }
 
-        function createEnemyMesh() {
-            const group = new THREE.Group();
-            const suitMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 });
-            const vestMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
-            const visorMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, metalness: 0.9, roughness: 0.1 });
-            const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.85, 0.35), suitMat); body.position.y = 0.85;
-            const vest = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.55, 0.4), vestMat); vest.position.y = 0.9;
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.32), vestMat); head.position.y = 1.55;
-            const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.05), visorMat); visor.position.set(0, 1.57, -0.16);
-            group.add(body, vest, head, visor);
-            scene.add(group);
-            return group;
-        }
-
         function triggerKillNotification() {
             const notify = document.getElementById('kill-notify');
             notify.style.opacity = '1';
@@ -345,10 +376,9 @@
                 notify.style.transform = 'translate(-50%, -50%) scale(1.0)';
             }, 1500);
 
-            // Záznam do Kill Feedu
             const feed = document.getElementById('kill-feed');
             const entry = document.createElement('div');
-            entry.className = 'bg-slate-900/90 text-red-400 border border-red-500/40 px-3 py-1 rounded-lg shadow-md animate-bounce';
+            entry.className = 'bg-slate-900/90 text-red-400 border border-red-500/40 px-3 py-1 rounded-lg shadow-md';
             entry.innerText = '⚔️ Zabil jsi protivníka!';
             feed.appendChild(entry);
             setTimeout(() => entry.remove(), 4000);
@@ -363,9 +393,7 @@
 
             if (players[socket.id]) {
                 const currentKills = players[socket.id].kills || 0;
-                if (currentKills > prevKills) {
-                    triggerKillNotification();
-                }
+                if (currentKills > prevKills) triggerKillNotification();
                 prevKills = currentKills;
             }
 
@@ -414,6 +442,7 @@
                     otherPlayers[data.id].position.x = data.player.x;
                     otherPlayers[data.id].position.z = data.player.z;
                     otherPlayers[data.id].rotation.y = data.player.rotation;
+                    otherPlayers[data.id].isCrouching = data.player.isCrouching;
                 }
             });
 
@@ -474,7 +503,7 @@
 
         function createBulletTrace(startPos, dirVector) {
             const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffea00 });
-            const tracerGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.8);
+            const tracerGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.8);
             const tracer = new THREE.Mesh(tracerGeo, tracerMat);
             tracer.position.copy(startPos);
             tracer.lookAt(startPos.clone().add(dirVector));
@@ -512,14 +541,11 @@
             const w = WEAPONS[currentWeaponKey];
             if (isReloading || ammoState[currentWeaponKey] === w.maxAmmo) return;
             isReloading = true;
-            let startRot = currentGunGroup.rotation.x;
-            currentGunGroup.rotation.x = -0.8;
             document.getElementById('ammo').innerText = "RELOAD";
 
             setTimeout(() => {
                 ammoState[currentWeaponKey] = w.maxAmmo;
                 document.getElementById('ammo').innerText = w.maxAmmo;
-                currentGunGroup.rotation.x = startRot;
                 isReloading = false;
             }, 1200);
         }
@@ -528,7 +554,7 @@
             myHp = 100;
             flashbangsCount = 2;
             document.getElementById('flash-count').innerText = '2 / 2';
-            ammoState = { rifle: WEAPONS.rifle.maxAmmo, sniper: WEAPONS.sniper.maxAmmo };
+            ammoState = { m4: WEAPONS.m4.maxAmmo, sniper: WEAPONS.sniper.maxAmmo };
             stamina = maxStamina;
             document.getElementById('hp').innerText = myHp;
             document.getElementById('ammo').innerText = ammoState[currentWeaponKey];
@@ -552,24 +578,25 @@
 
             if (code === 'KeyR' && state) reload();
             if (code === 'KeyG' && state) throwFlashbang();
-            if (code === 'Digit1' && state) switchWeapon('rifle');
+            if (code === 'Digit1' && state) switchWeapon('m4');
             if (code === 'Digit2' && state) switchWeapon('sniper');
         }
 
         function onMouseDown(e) {
             if (!isLocked || myHp <= 0) return;
-            if (e.button === 0) shoot();
+            if (e.button === 0) { isMouseDown = true; shoot(); }
             if (e.button === 2) isAiming = true;
         }
 
         function onMouseUp(e) {
+            if (e.button === 0) isMouseDown = false;
             if (e.button === 2) isAiming = false;
         }
 
         function onWheel(e) {
             if (!isLocked || myHp <= 0) return;
             if (e.deltaY > 0) switchWeapon('sniper');
-            else if (e.deltaY < 0) switchWeapon('rifle');
+            else if (e.deltaY < 0) switchWeapon('m4');
         }
 
         function onMouseMove(e) {
@@ -578,6 +605,9 @@
             yawObject.rotation.y -= (e.movementX || 0) * sens;
             pitchObject.rotation.x -= (e.movementY || 0) * sens;
             pitchObject.rotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitchObject.rotation.x));
+
+            swayX -= (e.movementX || 0) * 0.0003;
+            swayY += (e.movementY || 0) * 0.0003;
         }
 
         function checkCollision(newPosition) {
@@ -604,7 +634,8 @@
             ammoState[currentWeaponKey]--;
             document.getElementById('ammo').innerText = ammoState[currentWeaponKey];
 
-            muzzleFlash.material.opacity = 1; flashTimer = 0.05;
+            muzzleFlash.material.opacity = 1; flashTimer = 0.04;
+            recoilOffset = currentWeaponKey === 'm4' ? 0.04 : 0.09;
 
             const gunWorldPos = new THREE.Vector3();
             muzzleFlash.getWorldPosition(gunWorldPos);
@@ -615,7 +646,7 @@
             createBulletTrace(gunWorldPos, raycaster.ray.direction);
 
             Object.keys(otherPlayers).forEach((id) => {
-                const hits = raycaster.intersectObjects(otherPlayers[id].children);
+                const hits = raycaster.intersectObjects(otherPlayers[id].children, true);
                 if (hits.length > 0) {
                     socket.emit('shoot', { hitPlayerId: id, damage: w.damage });
                 }
@@ -627,6 +658,11 @@
             const time = performance.now();
             const delta = (time - prevTime) / 1000;
             prevTime = time;
+
+            // Kontrola Full-Auto střelby při držení tlačítka
+            if (isMouseDown && WEAPONS[currentWeaponKey].auto) {
+                shoot();
+            }
 
             if (flashTimer > 0) {
                 flashTimer -= delta;
@@ -677,18 +713,66 @@
                 yawObject.position.y += (targetEyeHeight - yawObject.position.y) * 0.2;
             }
 
+            const isMoving = moveForward || moveBackward || moveLeft || moveRight;
+
+            swayX *= 0.85; swayY *= 0.85;
+            recoilOffset *= 0.8;
+
+            if (isMoving && isGrounded) {
+                bobTimer += delta * (isSprinting ? 14 : 9);
+            } else {
+                bobTimer += delta * 2;
+            }
+
+            const bobX = Math.cos(bobTimer) * (isMoving ? 0.01 : 0.002);
+            const bobY = Math.sin(bobTimer * 2) * (isMoving ? 0.01 : 0.002);
+
             const targetFov = isAiming ? WEAPONS[currentWeaponKey].zoomFov : 75;
-            const targetPos = isAiming ? WEAPONS[currentWeaponKey].aimPos : WEAPONS[currentWeaponKey].bodyPos;
+            const basePos = isAiming ? WEAPONS[currentWeaponKey].aimPos : WEAPONS[currentWeaponKey].bodyPos;
 
             camera.fov += (targetFov - camera.fov) * 0.15;
             camera.updateProjectionMatrix();
 
-            currentGunGroup.position.x += (targetPos[0] - currentGunGroup.position.x) * 0.2;
-            currentGunGroup.position.y += (targetPos[1] - currentGunGroup.position.y) * 0.2;
-            currentGunGroup.position.z += (targetPos[2] - currentGunGroup.position.z) * 0.2;
+            let reloadRot = isReloading ? -0.7 : 0;
+
+            currentGunGroup.position.x += (basePos[0] + swayX + bobX - currentGunGroup.position.x) * 0.2;
+            currentGunGroup.position.y += (basePos[1] + swayY + bobY - currentGunGroup.position.y) * 0.2;
+            currentGunGroup.position.z += (basePos[2] + recoilOffset - currentGunGroup.position.z) * 0.2;
+            currentGunGroup.rotation.x += (reloadRot - currentGunGroup.rotation.x) * 0.2;
+
+            /* --- ANIMACE CROUCHING A POHYBU OSTATNÍCH HRÁČŮ --- */
+            Object.keys(otherPlayers).forEach(id => {
+                const enemy = otherPlayers[id];
+                const bodyPivot = enemy.getObjectByName("bodyPivot");
+                const legL = enemy.getObjectByName("leftLeg");
+                const legR = enemy.getObjectByName("rightLeg");
+
+                const enemyIsCrouching = enemy.isCrouching || false;
+
+                // Kleknutí (fyzické snížení horní části těla)
+                if (bodyPivot) {
+                    const targetPivotY = enemyIsCrouching ? 0.15 : 0.5;
+                    const targetPivotRot = enemyIsCrouching ? 0.25 : 0;
+                    bodyPivot.position.y += (targetPivotY - bodyPivot.position.y) * 0.2;
+                    bodyPivot.rotation.x += (targetPivotRot - bodyPivot.rotation.x) * 0.2;
+                }
+
+                // Pokrčení nohou při skrčení
+                if (legL && legR) {
+                    const enemyBob = Math.sin(time * 0.01);
+                    if (enemyIsCrouching) {
+                        legL.scale.set(1, 0.5, 1); legR.scale.set(1, 0.5, 1);
+                        legL.position.y = 0.14; legR.position.y = 0.14;
+                    } else {
+                        legL.scale.set(1, 1, 1); legR.scale.set(1, 1, 1);
+                        legL.position.y = 0.27; legR.position.y = 0.27;
+                        legL.rotation.x = enemyBob * 0.5;
+                        legR.rotation.x = -enemyBob * 0.5;
+                    }
+                }
+            });
 
             if (isLocked && myHp > 0) {
-                const isMoving = moveForward || moveBackward || moveLeft || moveRight;
                 let speedMultiplier = isAiming ? 3.0 : 5.0;
 
                 if (isCrouching) {
@@ -714,7 +798,12 @@
 
                 if (checkCollision(yawObject.position)) yawObject.position.copy(oldPos);
 
-                socket.emit('playerMove', { x: yawObject.position.x, z: yawObject.position.z, rotation: yawObject.rotation.y });
+                socket.emit('playerMove', { 
+                    x: yawObject.position.x, 
+                    z: yawObject.position.z, 
+                    rotation: yawObject.rotation.y,
+                    isCrouching: isCrouching
+                });
             }
 
             renderer.render(scene, camera);
