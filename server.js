@@ -36,7 +36,6 @@ io.on('connection', (socket) => {
     });
 
     socket.on('throwFlashbang', (data) => {
-        // Předání dat o vrhnutém granátu všem ostatním klientům
         socket.broadcast.emit('spawnFlashbang', data);
     });
 
@@ -51,7 +50,8 @@ io.on('connection', (socket) => {
     });
 });
 
+// Správné nastavení portu a hostu pro Render.com
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server běží na portu ${PORT}`);
 });
