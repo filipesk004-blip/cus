@@ -38,7 +38,6 @@
     <div id="hit-vignette"></div>
     <div id="flashbang-overlay"></div>
     
-    <!-- Horní nápověda -->
     <div class="fixed top-4 left-4 z-10 text-white pointer-events-none bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700/80 shadow-2xl">
         <h1 class="text-amber-400 font-black tracking-wider text-sm mb-1 uppercase">Siege 3D Tactical</h1>
         <div class="text-xs text-slate-300 space-y-0.5">
@@ -49,7 +48,6 @@
         </div>
     </div>
 
-    <!-- HUD vpravo dole -->
     <div class="fixed bottom-6 right-6 z-10 pointer-events-none flex items-center gap-4 bg-slate-900/90 backdrop-blur-md px-6 py-4 rounded-2xl border border-slate-700/80 shadow-2xl">
         <div class="flex flex-col items-end border-r border-slate-700 pr-4">
             <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Zbraň</span>
@@ -80,7 +78,6 @@
         </div>
     </div>
 
-    <!-- Death Screen -->
     <div id="death-screen" class="hidden fixed inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md text-white">
         <h2 class="text-5xl font-black text-red-500 tracking-wider mb-2">BYL JSI ELIMINOVÁN</h2>
         <p class="text-slate-400 mb-6">Příště buď rychlejší na spoušti.</p>
@@ -92,6 +89,7 @@
     <div id="game-container" class="w-full h-screen"></div>
 
     <script>
+        // Automatické připojení k aktuální doméně na Render.com
         const socket = io();
         let scene, camera, renderer;
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, isSprinting = false, isCrouching = false;
@@ -100,7 +98,6 @@
         let yawObject, pitchObject;
         let myHp = 100;
 
-        // Fyzika skoku a skrčení
         let yVelocity = 0;
         let isGrounded = true;
         const standingHeight = 1.6;
@@ -177,7 +174,6 @@
             animate();
         }
 
-        // Vytvoření procedurální mřížkové textury
         function createGridTexture() {
             const canvas = document.createElement('canvas');
             canvas.width = 256;
@@ -366,12 +362,10 @@
                 }
             });
 
-            // Síťové vytvoření 3D granátu od ostatních hráčů
             socket.on('spawnFlashbang', (data) => {
                 spawnVisualGrenade(data.pos, data.velocity, false);
             });
 
-            // Výbuch Flashbangu a výpočet oslepení podle smyslového pohledu
             socket.on('flashbangDetonated', (data) => {
                 const myPos = yawObject.position.clone();
                 const flashPos = new THREE.Vector3(data.x, data.y, data.z);
@@ -382,15 +376,15 @@
                     camera.getWorldDirection(camDir);
 
                     const dirToFlash = flashPos.clone().sub(myPos).normalize();
-                    const dot = camDir.dot(dirToFlash); // 1 = přímý pohled, -1 = zcela zády
+                    const dot = camDir.dot(dirToFlash);
 
                     let intensity = 0;
                     if (dot > 0.2) {
                         intensity = (dist < 10) ? 1.0 : (1.0 - (dist - 10) / 12);
                     } else if (dot > -0.3) {
-                        intensity = 0.3; // Částečný záblesk na periferii
+                        intensity = 0.3;
                     } else {
-                        intensity = 0.08; // Jen záblesk světla zpozadí
+                        intensity = 0.08;
                     }
 
                     if (intensity > 0.05) {
@@ -446,7 +440,7 @@
             activeGrenades.push({
                 mesh: mesh,
                 velocity: new THREE.Vector3(velocity.x, velocity.y, velocity.z),
-                timer: 2.2, // Časovač výbuchu v sekundách
+                timer: 2.2,
                 isMaster: isMaster
             });
         }
@@ -462,7 +456,7 @@
             
             startPos.add(dir.clone().multiplyScalar(0.5));
             const velocity = dir.multiplyScalar(14);
-            velocity.y += 3; // Mírný oblouk nahoru
+            velocity.y += 3;
 
             spawnVisualGrenade(startPos, velocity, true);
 
@@ -611,7 +605,6 @@
                 if (flashTimer <= 0) muzzleFlash.material.opacity = 0;
             }
 
-            // Pohyb projektilů
             for (let i = bullets.length - 1; i >= 0; i--) {
                 const b = bullets[i];
                 const moveStep = 90 * delta;
@@ -624,18 +617,15 @@
                 }
             }
 
-            // Pohyb a fyzika 3D Flashbangů
             for (let i = activeGrenades.length - 1; i >= 0; i--) {
                 const g = activeGrenades[i];
                 g.timer -= delta;
                 
-                // Gravitace a posun
                 g.velocity.y -= 15.0 * delta;
                 g.mesh.position.addScaledVector(g.velocity, delta);
                 g.mesh.rotation.x += 5 * delta;
                 g.mesh.rotation.z += 5 * delta;
 
-                // Odraz od podlahy
                 if (g.mesh.position.y <= 0.08) {
                     g.mesh.position.y = 0.08;
                     g.velocity.y *= -0.4;
@@ -656,10 +646,8 @@
                 }
             }
 
-            // Výška kamery (skrčení)
             targetEyeHeight = isCrouching ? crouchingHeight : standingHeight;
 
-            // Vertikální pohyb (skákání a gravitace)
             if (!isGrounded) {
                 yawObject.position.y += yVelocity * delta;
                 yVelocity -= 18.0 * delta;
@@ -673,7 +661,6 @@
                 yawObject.position.y += (targetEyeHeight - yawObject.position.y) * 0.2;
             }
 
-            // Zoom kamery a offset zbraně
             const targetFov = isAiming ? WEAPONS[currentWeaponKey].zoomFov : 75;
             const targetPos = isAiming ? WEAPONS[currentWeaponKey].aimPos : WEAPONS[currentWeaponKey].bodyPos;
 
