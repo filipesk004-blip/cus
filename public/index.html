@@ -2,7 +2,7 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS Siege - Red Dot Sight</title>
+    <title>3D FPS Siege - Forest Warfare</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
@@ -59,12 +59,12 @@
     <div id="flashbang-overlay"></div>
     
     <div class="fixed top-4 left-4 z-10 text-white pointer-events-none bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700/80 shadow-2xl">
-        <h1 class="text-amber-400 font-black tracking-wider text-sm mb-1 uppercase">Siege 3D Tactical</h1>
+        <h1 class="text-emerald-400 font-black tracking-wider text-sm mb-1 uppercase">Siege 3D - Forest Arena</h1>
         <div class="text-xs text-slate-300 space-y-0.5">
-            <div>Pohyb: <span class="text-amber-400 font-bold">WASD</span> | Běh: <span class="text-amber-400 font-bold">Shift</span></div>
-            <div>Skok: <span class="text-amber-400 font-bold">Space</span> | Skrčení: <span class="text-amber-400 font-bold">Ctrl / C</span></div>
-            <div>Střelba (Auto): <span class="text-amber-400 font-bold">Držet LMB</span> | Kolimátor: <span class="text-amber-400 font-bold">RMB</span></div>
-            <div>Vybavení: <span class="text-amber-400 font-bold">1 / 2</span> | Flashbang: <span class="text-amber-400 font-bold">G</span></div>
+            <div>Pohyb: <span class="text-emerald-400 font-bold">WASD</span> | Běh: <span class="text-emerald-400 font-bold">Shift</span></div>
+            <div>Skok: <span class="text-emerald-400 font-bold">Space</span> | Skrčení: <span class="text-emerald-400 font-bold">Ctrl / C</span></div>
+            <div>Střelba: <span class="text-emerald-400 font-bold">LMB</span> | Kolimátor: <span class="text-emerald-400 font-bold">RMB</span></div>
+            <div>Vybavení: <span class="text-emerald-400 font-bold">1 / 2</span> | Flashbang: <span class="text-emerald-400 font-bold">G</span></div>
         </div>
     </div>
 
@@ -127,6 +127,7 @@
         let myHp = 100;
         let flashbangsCount = 2;
         let prevKills = 0;
+        let myNickname = "Hráč";
 
         let yVelocity = 0;
         let isGrounded = true;
@@ -134,7 +135,6 @@
         const crouchingHeight = 0.9;
         let targetEyeHeight = standingHeight;
 
-        // Upravená pozice aimPos pro M4, aby byla výška kolimátoru přesně v centru kamery
         const WEAPONS = {
             m4: { name: 'M4A1 Custom', maxAmmo: 30, damage: 18, fireRate: 90, auto: true, zoomFov: 45, bodyPos: [0.2, -0.2, -0.4], aimPos: [0, -0.118, -0.22] },
             sniper: { name: 'Sniperka', maxAmmo: 5, damage: 65, fireRate: 850, auto: false, zoomFov: 18, bodyPos: [0.24, -0.24, -0.48], aimPos: [0, -0.145, -0.22] }
@@ -154,6 +154,7 @@
         let obstacles = [];
         let bullets = [];
         let activeGrenades = [];
+        let medkits = [];
         let m4Group, sniperGroup, currentGunGroup, muzzleFlash;
         let flashTimer = 0;
         let hitmarkTimeout = null, killNotifyTimeout = null;
@@ -163,9 +164,44 @@
         let bobTimer = 0;
         let recoilOffset = 0;
 
+        const SPAWN_POINTS = [
+            { x: -35, z: -35 }, { x: 35, z: -35 },
+            { x: -35, z: 35 },  { x: 35, z: 35 },
+            { x: 0, z: -30 },    { x: 0, z: 30 },
+            { x: -30, z: 0 },    { x: 30, z: 0 }
+        ];
+
+        function getRandomSpawn() {
+            return SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
+        }
+
+        function initUI() {
+            const overlay = document.createElement('div');
+            overlay.id = 'nick-overlay';
+            overlay.className = 'fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur-md text-white';
+            overlay.innerHTML = `
+                <div class="bg-slate-900 p-8 rounded-2xl border border-slate-700 shadow-2xl flex flex-col items-center max-w-md w-full">
+                    <h2 class="text-2xl font-black text-emerald-400 mb-2 uppercase tracking-wider">Vstup do Lesní Arény</h2>
+                    <p class="text-slate-400 text-sm mb-6 text-center">Zadej svou přezdívku pro zobrazení v tabulce a nad postavou.</p>
+                    <input type="text" id="nick-input" maxlength="12" placeholder="Tvoje přezdívka" class="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white font-bold mb-6 focus:outline-none focus:border-emerald-400 text-center">
+                    <button id="start-btn" class="w-full py-3 bg-emerald-500 hover:bg-emerald-400 font-bold text-slate-950 rounded-xl shadow-lg transition cursor-pointer">VSTOUPIT DO HRY</button>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            document.getElementById('start-btn').addEventListener('click', () => {
+                const val = document.getElementById('nick-input').value.trim();
+                if (val.length > 0) myNickname = val;
+                overlay.remove();
+                document.body.requestPointerLock();
+                init();
+            });
+        }
+
         function init() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0a0f1d);
+            scene.background = new THREE.Color(0x0f172a);
+            scene.fog = new THREE.FogExp2(0x0f172a, 0.015);
 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
 
@@ -173,7 +209,8 @@
             pitchObject.add(camera);
 
             yawObject = new THREE.Object3D();
-            yawObject.position.y = standingHeight;
+            const spawn = getRandomSpawn();
+            yawObject.position.set(spawn.x, standingHeight, spawn.z);
             yawObject.add(pitchObject);
             scene.add(yawObject);
 
@@ -181,15 +218,16 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.getElementById('game-container').appendChild(renderer.domElement);
 
-            const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+            const ambient = new THREE.AmbientLight(0xdcfce7, 0.6);
             scene.add(ambient);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            dirLight.position.set(10, 20, 10);
+            const dirLight = new THREE.DirectionalLight(0xfef08a, 0.9);
+            dirLight.position.set(20, 40, 20);
             scene.add(dirLight);
 
             createPlayerGuns();
-            buildMap();
+            buildForestMap();
+            initMedkits();
             setupSocketListeners();
 
             document.body.addEventListener('click', (e) => { 
@@ -211,13 +249,15 @@
             animate();
         }
 
-        function createGridTexture() {
+        function createForestFloorTexture() {
             const canvas = document.createElement('canvas');
             canvas.width = 256; canvas.height = 256;
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1e293b'; ctx.fillRect(0, 0, 256, 256);
-            ctx.strokeStyle = '#334155'; ctx.lineWidth = 4;
-            ctx.strokeRect(0, 0, 256, 256);
+            ctx.fillStyle = '#1e3a1e'; ctx.fillRect(0, 0, 256, 256);
+            ctx.fillStyle = '#142814';
+            for (let i = 0; i < 300; i++) {
+                ctx.fillRect(Math.random() * 256, Math.random() * 256, 4, 4);
+            }
             const texture = new THREE.CanvasTexture(canvas);
             texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping;
             return texture;
@@ -228,19 +268,9 @@
             const blackSteel = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.1 });
             const tanStock = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.5 });
             
-            // Průhledné sklo pro kolimátor
-            const scopeGlassMat = new THREE.MeshStandardMaterial({ 
-                color: 0x66ffff, 
-                transparent: true, 
-                opacity: 0.3, 
-                metalness: 0.9, 
-                roughness: 0.1 
-            });
-
-            // Červená tečka uvnitř kolimátoru
+            const scopeGlassMat = new THREE.MeshStandardMaterial({ color: 0x66ffff, transparent: true, opacity: 0.3, metalness: 0.9, roughness: 0.1 });
             const redDotMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
 
-            // M4A1 s detailním kolimátorem
             m4Group = new THREE.Group();
             const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, 0.28), darkMetal);
             const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.05, 0.25), blackSteel);
@@ -256,22 +286,17 @@
             const mag = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.16, 0.06), blackSteel);
             mag.position.set(0, -0.1, -0.04); mag.rotation.x = 0.2;
 
-            // Konstrukce Kolimátoru (Red Dot Sight)
             const sightBase = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.015, 0.09), blackSteel);
             sightBase.position.set(0, 0.052, -0.04);
-
             const sightFrame = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.042, 0.01), blackSteel);
             sightFrame.position.set(0, 0.073, -0.04);
-
             const sightGlass = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.036, 0.002), scopeGlassMat);
             sightGlass.position.set(0, 0.073, -0.04);
-
             const redDot = new THREE.Mesh(new THREE.SphereGeometry(0.0018, 8, 8), redDotMat);
             redDot.position.set(0, 0.073, -0.041);
 
             m4Group.add(receiver, handguard, barrel, stock, grip, foregrip, mag, sightBase, sightFrame, sightGlass, redDot);
 
-            // Odstřelovací puška
             sniperGroup = new THREE.Group();
             const sReceiver = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.11, 0.45), darkMetal);
             const sBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.55), blackSteel);
@@ -302,7 +327,26 @@
             muzzleFlash.position.set(0, 0.0, -0.52);
         }
 
-        function createEnemyMesh() {
+        function createNameTag(name) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+            ctx.fillRect(0, 0, 256, 64);
+            ctx.fillStyle = '#34d399';
+            ctx.font = 'Bold 28px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(name || 'Hráč', 128, 42);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.scale.set(1.8, 0.45, 1);
+            sprite.position.y = 1.4;
+            return sprite;
+        }
+
+        function createEnemyMesh(name) {
             const group = new THREE.Group();
             const suitMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 });
             const vestMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
@@ -316,8 +360,8 @@
             const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.32), helmetMat); helmet.position.y = 1.08;
             const visor = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.07, 0.05), visorMat); visor.position.set(0, 1.01, -0.15);
 
-            const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.12), suitMat); leftArm.position.set(-0.33, 0.4, 0); leftArm.name = "leftArm";
-            const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.12), suitMat); rightArm.position.set(0.33, 0.4, 0); rightArm.name = "rightArm";
+            const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.12), suitMat); leftArm.position.set(-0.33, 0.4, 0);
+            const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.12), suitMat); rightArm.position.set(0.33, 0.4, 0);
 
             bodyPivot.add(body, vest, head, helmet, visor, leftArm, rightArm);
             bodyPivot.position.y = 0.5;
@@ -325,9 +369,110 @@
             const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.55, 0.18), vestMat); leftLeg.position.set(-0.16, 0.27, 0); leftLeg.name = "leftLeg";
             const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.55, 0.18), vestMat); rightLeg.position.set(0.16, 0.27, 0); rightLeg.name = "rightLeg";
 
-            group.add(bodyPivot, leftLeg, rightLeg);
+            const nameTag = createNameTag(name);
+
+            group.add(bodyPivot, leftLeg, rightLeg, nameTag);
             scene.add(group);
             return group;
+        }
+
+        function createTree(x, z) {
+            const group = new THREE.Group();
+            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3f2e1e, roughness: 0.9 });
+            const leavesMat = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.6 });
+
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 4), trunkMat);
+            trunk.position.y = 2;
+            group.add(trunk);
+
+            const leaves1 = new THREE.Mesh(new THREE.ConeGeometry(2.5, 4, 6), leavesMat);
+            leaves1.position.y = 4.5;
+            const leaves2 = new THREE.Mesh(new THREE.ConeGeometry(2, 3.5, 6), leavesMat);
+            leaves2.position.y = 6;
+            group.add(leaves1, leaves2);
+
+            group.position.set(x, 0, z);
+            scene.add(group);
+
+            const box = new THREE.Box3().setFromObject(trunk);
+            obstacles.push(box);
+        }
+
+        function createRock(x, z, scale) {
+            const rockMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.8 });
+            const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(scale), rockMat);
+            rock.position.set(x, scale * 0.7, z);
+            rock.rotation.set(Math.random(), Math.random(), Math.random());
+            scene.add(rock);
+
+            const box = new THREE.Box3().setFromObject(rock);
+            obstacles.push(box);
+        }
+
+        function createObstacle(x, y, z, w, h, d, material) {
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+            mesh.position.set(x, y, z);
+            scene.add(mesh);
+            obstacles.push(new THREE.Box3().setFromObject(mesh));
+        }
+
+        function buildForestMap() {
+            const floorTex = createForestFloorTexture();
+            floorTex.repeat.set(40, 40);
+            const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.9 });
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            scene.add(floor);
+
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 1 });
+            createObstacle(0, 4, -50, 100, 8, 1, wallMat);
+            createObstacle(0, 4, 50, 100, 8, 1, wallMat);
+            createObstacle(-50, 4, 0, 1, 8, 100, wallMat);
+            createObstacle(50, 4, 0, 1, 8, 100, wallMat);
+
+            for (let i = 0; i < 45; i++) {
+                let x = (Math.random() - 0.5) * 80;
+                let z = (Math.random() - 0.5) * 80;
+                if (Math.abs(x) > 6 || Math.abs(z) > 6) createTree(x, z);
+            }
+
+            for (let i = 0; i < 20; i++) {
+                let x = (Math.random() - 0.5) * 80;
+                let z = (Math.random() - 0.5) * 80;
+                if (Math.abs(x) > 6 || Math.abs(z) > 6) createRock(x, z, 1 + Math.random() * 1.2);
+            }
+        }
+
+        function initMedkits() {
+            spawnMedkitObject(0, 0, true);
+            spawnMedkitObject(-25, -25, false);
+            spawnMedkitObject(25, -25, false);
+            spawnMedkitObject(-25, 25, false);
+            spawnMedkitObject(25, 25, false);
+        }
+
+        function spawnMedkitObject(x, z, isCenter) {
+            const group = new THREE.Group();
+            const boxMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+            const crossMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+
+            const base = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.4, 0.5), boxMat);
+            const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.42, 0.12), crossMat);
+            const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.42, 0.4), crossMat);
+
+            group.add(base, crossH, crossV);
+            group.position.set(x, 0.3, z);
+            scene.add(group);
+
+            medkits.push({
+                group: group,
+                x: x,
+                z: z,
+                active: true,
+                isCenter: isCenter,
+                timer: 0,
+                cooldown: isCenter ? 15 : 25
+            });
         }
 
         function switchWeapon(key) {
@@ -352,64 +497,32 @@
             document.getElementById('max-ammo').innerText = WEAPONS[currentWeaponKey].maxAmmo;
         }
 
-        function buildMap() {
-            const gridTex = createGridTexture(); gridTex.repeat.set(30, 30);
-            const floorMat = new THREE.MeshStandardMaterial({ map: gridTex, roughness: 0.8 });
-            const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), floorMat);
-            floor.rotation.x = -Math.PI / 2; scene.add(floor);
-
-            const wallTex = createGridTexture(); wallTex.repeat.set(10, 2);
-            const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.6 });
-            const crateMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.7 });
-
-            createObstacle(0, 2.5, -30, 60, 5, 1, wallMat);
-            createObstacle(0, 2.5, 30, 60, 5, 1, wallMat);
-            createObstacle(-30, 2.5, 0, 1, 5, 60, wallMat);
-            createObstacle(30, 2.5, 0, 1, 5, 60, wallMat);
-
-            createObstacle(-10, 1.25, -10, 4, 2.5, 4, crateMat);
-            createObstacle(10, 1.25, -10, 4, 2.5, 4, crateMat);
-            createObstacle(-10, 1.25, 10, 4, 2.5, 4, crateMat);
-            createObstacle(10, 1.25, 10, 4, 2.5, 4, crateMat);
-            createObstacle(0, 1.5, 0, 8, 3, 2, crateMat);
-        }
-
-        function createObstacle(x, y, z, w, h, d, material) {
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-            mesh.position.set(x, y, z);
-            scene.add(mesh);
-            obstacles.push(new THREE.Box3().setFromObject(mesh));
-        }
-
-        function triggerKillNotification() {
-            const notify = document.getElementById('kill-notify');
-            notify.style.opacity = '1';
-            notify.style.transform = 'translate(-50%, -50%) scale(1.1)';
-            
-            if (killNotifyTimeout) clearTimeout(killNotifyTimeout);
-            killNotifyTimeout = setTimeout(() => {
-                notify.style.opacity = '0';
-                notify.style.transform = 'translate(-50%, -50%) scale(1.0)';
-            }, 1500);
-
-            const feed = document.getElementById('kill-feed');
-            const entry = document.createElement('div');
-            entry.className = 'bg-slate-900/90 text-red-400 border border-red-500/40 px-3 py-1 rounded-lg shadow-md';
-            entry.innerText = '⚔️ Zabil jsi protivníka!';
-            feed.appendChild(entry);
-            setTimeout(() => entry.remove(), 4000);
-        }
-
         function renderScoreboard(players) {
             const list = document.getElementById('scoreboard-list');
             list.innerHTML = '';
             
-            const sorted = Object.keys(players).map(id => ({ id, kills: players[id].kills || 0 }))
+            const sorted = Object.keys(players).map(id => ({ id, kills: players[id].kills || 0, name: players[id].name || 'Hráč' }))
                 .sort((a, b) => b.kills - a.kills);
 
             if (players[socket.id]) {
                 const currentKills = players[socket.id].kills || 0;
-                if (currentKills > prevKills) triggerKillNotification();
+                if (currentKills > prevKills) {
+                    const notify = document.getElementById('kill-notify');
+                    notify.style.opacity = '1';
+                    notify.style.transform = 'translate(-50%, -50%) scale(1.1)';
+                    if (killNotifyTimeout) clearTimeout(killNotifyTimeout);
+                    killNotifyTimeout = setTimeout(() => {
+                        notify.style.opacity = '0';
+                        notify.style.transform = 'translate(-50%, -50%) scale(1.0)';
+                    }, 1500);
+
+                    const feed = document.getElementById('kill-feed');
+                    const entry = document.createElement('div');
+                    entry.className = 'bg-slate-900/90 text-red-400 border border-red-500/40 px-3 py-1 rounded-lg shadow-md';
+                    entry.innerText = '⚔️ Zabil jsi protivníka!';
+                    feed.appendChild(entry);
+                    setTimeout(() => entry.remove(), 4000);
+                }
                 prevKills = currentKills;
             }
 
@@ -418,36 +531,26 @@
                 item.className = 'flex justify-between items-center py-0.5 border-b border-slate-800/50';
                 const isMe = p.id === socket.id;
                 item.innerHTML = `
-                    <span class="${isMe ? 'text-amber-400 font-bold' : 'text-slate-300'}">${isMe ? 'Ty' : 'Hráč ' + p.id.substring(0, 4)}</span>
+                    <span class="${isMe ? 'text-emerald-400 font-bold' : 'text-slate-300'}">${isMe ? myNickname : p.name}</span>
                     <span class="text-emerald-400 font-mono font-bold">${p.kills} K</span>
                 `;
                 list.appendChild(item);
             });
         }
 
-        function triggerHitmark() {
-            const hitmark = document.getElementById('hitmark');
-            hitmark.style.opacity = '1';
-            if (hitmarkTimeout) clearTimeout(hitmarkTimeout);
-            hitmarkTimeout = setTimeout(() => hitmark.style.opacity = '0', 120);
-        }
-
         function setupSocketListeners() {
             socket.on('currentPlayers', (players) => {
                 renderScoreboard(players);
                 Object.keys(players).forEach((id) => {
-                    if (id === socket.id) {
-                        yawObject.position.x = players[id].x;
-                        yawObject.position.z = players[id].z;
-                    } else {
-                        otherPlayers[id] = createEnemyMesh();
+                    if (id !== socket.id) {
+                        otherPlayers[id] = createEnemyMesh(players[id].name);
                         otherPlayers[id].position.set(players[id].x, 0, players[id].z);
                     }
                 });
             });
 
             socket.on('newPlayer', (data) => {
-                otherPlayers[data.id] = createEnemyMesh();
+                otherPlayers[data.id] = createEnemyMesh(data.player.name);
                 otherPlayers[data.id].position.set(data.player.x, 0, data.player.z);
             });
 
@@ -462,7 +565,12 @@
                 }
             });
 
-            socket.on('hitConfirmed', () => triggerHitmark());
+            socket.on('hitConfirmed', () => {
+                const hitmark = document.getElementById('hitmark');
+                hitmark.style.opacity = '1';
+                if (hitmarkTimeout) clearTimeout(hitmarkTimeout);
+                hitmarkTimeout = setTimeout(() => hitmark.style.opacity = '0', 120);
+            });
 
             socket.on('takeDamage', (data) => {
                 if (myHp > 0) {
@@ -517,18 +625,6 @@
             });
         }
 
-        function createBulletTrace(startPos, dirVector) {
-            const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffea00 });
-            const tracerGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.8);
-            const tracer = new THREE.Mesh(tracerGeo, tracerMat);
-            tracer.position.copy(startPos);
-            tracer.lookAt(startPos.clone().add(dirVector));
-            tracer.rotateX(Math.PI / 2);
-            scene.add(tracer);
-
-            bullets.push({ mesh: tracer, dir: dirVector.clone().normalize(), distanceTraveled: 0, maxDistance: 60 });
-        }
-
         function spawnVisualGrenade(pos, velocity, isMaster) {
             const gGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.15, 8);
             const gMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.5 });
@@ -576,6 +672,10 @@
             document.getElementById('ammo').innerText = ammoState[currentWeaponKey];
             document.getElementById('stamina-bar').style.width = '100%';
             document.getElementById('death-screen').classList.add('hidden');
+
+            const spawn = getRandomSpawn();
+            yawObject.position.set(spawn.x, standingHeight, spawn.z);
+
             socket.emit('respawnRequest');
             document.body.requestPointerLock();
         }
@@ -603,7 +703,7 @@
             if (e.button === 0) { isMouseDown = true; shoot(); }
             if (e.button === 2) {
                 isAiming = true;
-                document.getElementById('crosshair').style.opacity = '0'; // Skryje 2D zaměřovač při míření přes kolimátor
+                document.getElementById('crosshair').style.opacity = '0';
             }
         }
 
@@ -665,7 +765,14 @@
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             
-            createBulletTrace(gunWorldPos, raycaster.ray.direction);
+            const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffea00 });
+            const tracerGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.8);
+            const tracer = new THREE.Mesh(tracerGeo, tracerMat);
+            tracer.position.copy(gunWorldPos);
+            tracer.lookAt(gunWorldPos.clone().add(raycaster.ray.direction));
+            tracer.rotateX(Math.PI / 2);
+            scene.add(tracer);
+            bullets.push({ mesh: tracer, dir: raycaster.ray.direction.clone().normalize(), distanceTraveled: 0, maxDistance: 60 });
 
             Object.keys(otherPlayers).forEach((id) => {
                 const hits = raycaster.intersectObjects(otherPlayers[id].children, true);
@@ -681,9 +788,27 @@
             const delta = (time - prevTime) / 1000;
             prevTime = time;
 
-            if (isMouseDown && WEAPONS[currentWeaponKey].auto) {
-                shoot();
-            }
+            medkits.forEach(m => {
+                if (!m.active) {
+                    m.timer += delta;
+                    if (m.timer >= m.cooldown) {
+                        m.active = true;
+                        m.group.visible = true;
+                        m.timer = 0;
+                    }
+                } else {
+                    m.group.rotation.y += delta * 1.5;
+                    const dist = yawObject.position.distanceTo(m.group.position);
+                    if (dist < 1.2 && myHp < 100) {
+                        myHp = 100;
+                        document.getElementById('hp').innerText = myHp;
+                        m.active = false;
+                        m.group.visible = false;
+                    }
+                }
+            });
+
+            if (isMouseDown && WEAPONS[currentWeaponKey].auto) shoot();
 
             if (flashTimer > 0) {
                 flashTimer -= delta;
@@ -762,7 +887,6 @@
             currentGunGroup.position.z += (basePos[2] + recoilOffset - currentGunGroup.position.z) * 0.25;
             currentGunGroup.rotation.x += (reloadRot - currentGunGroup.rotation.x) * 0.2;
 
-            // Animace klekání ostatních hráčů
             Object.keys(otherPlayers).forEach(id => {
                 const enemy = otherPlayers[id];
                 const bodyPivot = enemy.getObjectByName("bodyPivot");
@@ -822,7 +946,8 @@
                     x: yawObject.position.x, 
                     z: yawObject.position.z, 
                     rotation: yawObject.rotation.y,
-                    isCrouching: isCrouching
+                    isCrouching: isCrouching,
+                    name: myNickname
                 });
             }
 
@@ -835,7 +960,7 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        window.onload = init;
+        window.onload = initUI;
     </script>
 </body>
 </html>
