@@ -25,11 +25,19 @@
         #hit-vignette.active {
             box-shadow: inset 0 0 120px rgba(239, 68, 68, 0.8);
         }
+
+        /* Oslepení od Flashbangu */
+        #flashbang-overlay {
+            position: fixed; inset: 0; pointer-events: none; z-index: 40;
+            background: white; opacity: 0;
+            transition: opacity 0.1s ease-out;
+        }
     </style>
 </head>
 <body class="select-none" oncontextmenu="return false;">
     <div id="crosshair"></div>
     <div id="hit-vignette"></div>
+    <div id="flashbang-overlay"></div>
     
     <!-- Horní nápověda -->
     <div class="fixed top-4 left-4 z-10 text-white pointer-events-none bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700/80 shadow-2xl">
@@ -37,19 +45,17 @@
         <div class="text-xs text-slate-300 space-y-0.5">
             <div>Pohyb: <span class="text-amber-400 font-bold">WASD</span> | Běh: <span class="text-amber-400 font-bold">Shift</span></div>
             <div>Střelba: <span class="text-amber-400 font-bold">LMB</span> | Scope: <span class="text-amber-400 font-bold">RMB</span></div>
-            <div>Přepínání zbraní: <span class="text-amber-400 font-bold">Kolečko myši</span> | Přebití: <span class="text-amber-400 font-bold">R</span></div>
+            <div>Flashbang: <span class="text-amber-400 font-bold">G</span> | Přebití: <span class="text-amber-400 font-bold">R</span></div>
         </div>
     </div>
 
     <!-- HUD vpravo dole -->
     <div class="fixed bottom-6 right-6 z-10 pointer-events-none flex items-center gap-4 bg-slate-900/90 backdrop-blur-md px-6 py-4 rounded-2xl border border-slate-700/80 shadow-2xl">
-        <!-- ZBRAŇ -->
         <div class="flex flex-col items-end border-r border-slate-700 pr-4">
             <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Zbraň</span>
             <span id="weapon-name" class="text-lg font-black text-amber-400 uppercase">Rifle</span>
         </div>
 
-        <!-- STAMINA -->
         <div class="flex flex-col items-end border-r border-slate-700 pr-4 w-24">
             <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Stamina</span>
             <div class="w-full bg-slate-800 h-2 rounded-full mt-2 overflow-hidden border border-slate-700">
@@ -57,7 +63,6 @@
             </div>
         </div>
 
-        <!-- ZDRAVÍ -->
         <div class="flex flex-col items-end border-r border-slate-700 pr-4">
             <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Zdraví</span>
             <div class="flex items-baseline gap-1">
@@ -66,7 +71,6 @@
             </div>
         </div>
 
-        <!-- MUNIČÁK -->
         <div class="flex flex-col items-start pl-1 min-w-[70px]">
             <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Munice</span>
             <div class="flex items-baseline gap-1">
@@ -96,7 +100,6 @@
         let yawObject, pitchObject;
         let myHp = 100;
 
-        // Konfigurace zbraní
         const WEAPONS = {
             rifle: { name: 'Útočná Puška', maxAmmo: 30, damage: 25, fireRate: 150, zoomFov: 55, bodyPos: [0.2, -0.18, -0.4], aimPos: [0, -0.12, -0.3] },
             sniper: { name: 'Sniperka', maxAmmo: 5, damage: 50, fireRate: 800, zoomFov: 20, bodyPos: [0.2, -0.2, -0.45], aimPos: [0, -0.14, -0.3] }
@@ -113,6 +116,7 @@
 
         let otherPlayers = {};
         let obstacles = [];
+        let bullets = [];
         let rifleGroup, sniperGroup, currentGunGroup, muzzleFlash;
         let flashTimer = 0;
         let isLocked = false;
@@ -170,7 +174,6 @@
             const magMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
             const scopeMat = new THREE.MeshStandardMaterial({ color: 0x050505, metalness: 0.9, roughness: 0.1 });
 
-            // 1. Útočná puška
             rifleGroup = new THREE.Group();
             const rBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.45), darkMetal);
             const rBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.35), darkMetal);
@@ -181,7 +184,6 @@
             rMag.rotation.x = 0.2;
             rifleGroup.add(rBody, rBarrel, rMag);
 
-            // 2. Sniperka
             sniperGroup = new THREE.Group();
             const sBody = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 0.65), darkMetal);
             const sBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.55), darkMetal);
@@ -194,7 +196,6 @@
             sMag.position.set(0, -0.11, -0.1);
             sniperGroup.add(sBody, sBarrel, sScope, sMag);
 
-            // Muzzle Flash
             const flashGeo = new THREE.ConeGeometry(0.06, 0.2, 8);
             const flashMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0 });
             muzzleFlash = new THREE.Mesh(flashGeo, flashMat);
@@ -334,12 +335,66 @@
                 }
             });
 
+            // Přijetí výbuchu Flashbangu
+            socket.on('flashbangExploded', (data) => {
+                const myPos = yawObject.position;
+                const dist = Math.hypot(myPos.x - data.x, myPos.z - data.z);
+
+                if (dist < 20 && myHp > 0) {
+                    const flashOverlay = document.getElementById('flashbang-overlay');
+                    flashOverlay.style.opacity = '1';
+                    
+                    // Plynulé odznívání bělosti
+                    setTimeout(() => {
+                        flashOverlay.style.transition = 'opacity 3s ease-out';
+                        flashOverlay.style.opacity = '0';
+                        setTimeout(() => flashOverlay.style.transition = 'opacity 0.1s ease-out', 3000);
+                    }, 500);
+                }
+            });
+
             socket.on('playerDisconnected', (id) => {
                 if (otherPlayers[id]) {
                     scene.remove(otherPlayers[id]);
                     delete otherPlayers[id];
                 }
             });
+        }
+
+        function createBulletTrace(startPos, dirVector) {
+            const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffea00 });
+            const tracerGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.8);
+            const tracer = new THREE.Mesh(tracerGeo, tracerMat);
+
+            tracer.position.copy(startPos);
+            
+            // Otočení kuličky ve směru dráhy
+            const targetPos = startPos.clone().add(dirVector);
+            tracer.lookAt(targetPos);
+            tracer.rotateX(Math.PI / 2);
+
+            scene.add(tracer);
+
+            bullets.push({
+                mesh: tracer,
+                dir: dirVector.clone().normalize(),
+                distanceTraveled: 0,
+                maxDistance: 60
+            });
+        }
+
+        function throwFlashbang() {
+            if (!isLocked || myHp <= 0) return;
+
+            const startPos = new THREE.Vector3();
+            camera.getWorldPosition(startPos);
+            
+            const dir = new THREE.Vector3();
+            camera.getWorldDirection(dir);
+
+            // Výpočet dopadu granátu dopředu
+            const targetPos = startPos.clone().add(dir.multiplyScalar(10));
+            socket.emit('throwFlashbang', { x: targetPos.x, z: targetPos.z });
         }
 
         function reload() {
@@ -381,6 +436,7 @@
             if (code === 'KeyD') moveRight = state;
             if (code === 'ShiftLeft' || code === 'ShiftRight') isSprinting = state;
             if (code === 'KeyR' && state) reload();
+            if (code === 'KeyG' && state) throwFlashbang();
             if (code === 'Digit1' && state) switchWeapon('rifle');
             if (code === 'Digit2' && state) switchWeapon('sniper');
         }
@@ -406,8 +462,6 @@
 
             const movementX = e.movementX || 0;
             const movementY = e.movementY || 0;
-
-            // Při zamíření se citlivost sníží
             const sens = isAiming ? 0.001 : 0.002;
 
             yawObject.rotation.y -= movementX * sens;
@@ -447,8 +501,14 @@
             muzzleFlash.material.opacity = 1;
             flashTimer = 0.05;
 
+            // Vytvoření Bullet Trace
+            const gunWorldPos = new THREE.Vector3();
+            muzzleFlash.getWorldPosition(gunWorldPos);
+
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            
+            createBulletTrace(gunWorldPos, raycaster.ray.direction);
 
             Object.keys(otherPlayers).forEach((id) => {
                 const hits = raycaster.intersectObjects(otherPlayers[id].children);
@@ -467,6 +527,19 @@
             if (flashTimer > 0) {
                 flashTimer -= delta;
                 if (flashTimer <= 0) muzzleFlash.material.opacity = 0;
+            }
+
+            // Aktualizace pohybu nábojů (Bullet Tracer)
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                const moveStep = 90 * delta;
+                b.mesh.position.addScaledVector(b.dir, moveStep);
+                b.distanceTraveled += moveStep;
+
+                if (b.distanceTraveled >= b.maxDistance) {
+                    scene.remove(b.mesh);
+                    bullets.splice(i, 1);
+                }
             }
 
             // Plynulý Zoom / Scope
