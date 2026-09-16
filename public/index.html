@@ -27,6 +27,14 @@
         #hitmark::before { top: 7px; left: -2px; width: 20px; height: 2px; }
         #hitmark::after { top: -2px; left: 7px; width: 2px; height: 20px; }
 
+        /* Kill Indicator uprostřed */
+        #kill-notify {
+            position: absolute; top: 58%; left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none; z-index: 30; opacity: 0;
+            transition: opacity 0.15s ease-in-out, transform 0.15s ease-in-out;
+        }
+
         #hit-vignette {
             position: fixed; inset: 0; pointer-events: none; z-index: 15;
             box-shadow: inset 0 0 100px rgba(239, 68, 68, 0);
@@ -46,6 +54,13 @@
 <body class="select-none" oncontextmenu="return false;">
     <div id="crosshair"></div>
     <div id="hitmark"></div>
+    
+    <!-- Kill Notifikace uprostřed obrazovky -->
+    <div id="kill-notify" class="text-center">
+        <div class="text-red-500 font-black text-2xl tracking-widest drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">ELIMINOVÁN</div>
+        <div class="text-amber-400 font-bold text-sm tracking-wide">+100 SKÓRE</div>
+    </div>
+
     <div id="hit-vignette"></div>
     <div id="flashbang-overlay"></div>
     
@@ -60,12 +75,15 @@
         </div>
     </div>
 
-    <!-- Scoreboard vpravo nahoře -->
-    <div class="fixed top-4 right-4 z-10 text-white pointer-events-none bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700/80 shadow-2xl min-w-[200px]">
-        <h2 class="text-xs font-black tracking-widest text-slate-400 uppercase mb-2 border-b border-slate-700 pb-1">TABULKA SKÓRE</h2>
-        <div id="scoreboard-list" class="space-y-1 text-xs font-semibold">
-            <!-- Dynamicky generovaní hráči -->
+    <!-- Scoreboard & Kill Feed vpravo nahoře -->
+    <div class="fixed top-4 right-4 z-10 pointer-events-none flex flex-col items-end gap-3">
+        <div class="bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700/80 shadow-2xl min-w-[200px]">
+            <h2 class="text-xs font-black tracking-widest text-slate-400 uppercase mb-2 border-b border-slate-700 pb-1">TABULKA SKÓRE</h2>
+            <div id="scoreboard-list" class="space-y-1 text-xs font-semibold"></div>
         </div>
+        
+        <!-- Kill Feed -->
+        <div id="kill-feed" class="flex flex-col items-end space-y-1 text-xs font-bold"></div>
     </div>
 
     <!-- HUD vpravo dole -->
@@ -123,7 +141,8 @@
 
         let yawObject, pitchObject;
         let myHp = 100;
-        let flashbangsCount = 2; // Omezení na max 2 flashbangy na život
+        let flashbangsCount = 2;
+        let prevKills = 0;
 
         let yVelocity = 0;
         let isGrounded = true;
@@ -151,7 +170,7 @@
         let activeGrenades = [];
         let rifleGroup, sniperGroup, currentGunGroup, muzzleFlash;
         let flashTimer = 0;
-        let hitmarkTimeout = null;
+        let hitmarkTimeout = null, killNotifyTimeout = null;
         let isLocked = false;
 
         function init() {
@@ -204,18 +223,13 @@
 
         function createGridTexture() {
             const canvas = document.createElement('canvas');
-            canvas.width = 256;
-            canvas.height = 256;
+            canvas.width = 256; canvas.height = 256;
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1e293b';
-            ctx.fillRect(0, 0, 256, 256);
-            ctx.strokeStyle = '#334155';
-            ctx.lineWidth = 4;
+            ctx.fillStyle = '#1e293b'; ctx.fillRect(0, 0, 256, 256);
+            ctx.strokeStyle = '#334155'; ctx.lineWidth = 4;
             ctx.strokeRect(0, 0, 256, 256);
-            
             const texture = new THREE.CanvasTexture(canvas);
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.RepeatWrapping;
+            texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping;
             return texture;
         }
 
@@ -227,21 +241,17 @@
             rifleGroup = new THREE.Group();
             const rBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.45), darkMetal);
             const rBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.35), darkMetal);
-            rBarrel.rotation.x = Math.PI / 2;
-            rBarrel.position.set(0, 0.02, -0.35);
+            rBarrel.rotation.x = Math.PI / 2; rBarrel.position.set(0, 0.02, -0.35);
             const rMag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.08), magMat);
-            rMag.position.set(0, -0.1, -0.05);
-            rMag.rotation.x = 0.2;
+            rMag.position.set(0, -0.1, -0.05); rMag.rotation.x = 0.2;
             rifleGroup.add(rBody, rBarrel, rMag);
 
             sniperGroup = new THREE.Group();
             const sBody = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 0.65), darkMetal);
             const sBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.55), darkMetal);
-            sBarrel.rotation.x = Math.PI / 2;
-            sBarrel.position.set(0, 0.03, -0.55);
+            sBarrel.rotation.x = Math.PI / 2; sBarrel.position.set(0, 0.03, -0.55);
             const sScope = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.25), scopeMat);
-            sScope.rotation.x = Math.PI / 2;
-            sScope.position.set(0, 0.1, -0.1);
+            sScope.rotation.x = Math.PI / 2; sScope.position.set(0, 0.1, -0.1);
             const sMag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.1), magMat);
             sMag.position.set(0, -0.11, -0.1);
             sniperGroup.add(sBody, sBarrel, sScope, sMag);
@@ -263,14 +273,10 @@
 
         function switchWeapon(key) {
             if (isReloading || currentWeaponKey === key) return;
-            
-            isAiming = false;
-            camera.fov = 75;
-            camera.updateProjectionMatrix();
+            isAiming = false; camera.fov = 75; camera.updateProjectionMatrix();
 
             currentGunGroup.remove(muzzleFlash);
-            rifleGroup.visible = false;
-            sniperGroup.visible = false;
+            rifleGroup.visible = false; sniperGroup.visible = false;
 
             currentWeaponKey = key;
             currentGunGroup = currentWeaponKey === 'rifle' ? rifleGroup : sniperGroup;
@@ -286,16 +292,12 @@
         }
 
         function buildMap() {
-            const gridTex = createGridTexture();
-            gridTex.repeat.set(30, 30);
-            
+            const gridTex = createGridTexture(); gridTex.repeat.set(30, 30);
             const floorMat = new THREE.MeshStandardMaterial({ map: gridTex, roughness: 0.8 });
             const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), floorMat);
-            floor.rotation.x = -Math.PI / 2;
-            scene.add(floor);
+            floor.rotation.x = -Math.PI / 2; scene.add(floor);
 
-            const wallTex = createGridTexture();
-            wallTex.repeat.set(10, 2);
+            const wallTex = createGridTexture(); wallTex.repeat.set(10, 2);
             const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.6 });
             const crateMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.7 });
 
@@ -308,10 +310,7 @@
             createObstacle(10, 1.25, -10, 4, 2.5, 4, crateMat);
             createObstacle(-10, 1.25, 10, 4, 2.5, 4, crateMat);
             createObstacle(10, 1.25, 10, 4, 2.5, 4, crateMat);
-            
             createObstacle(0, 1.5, 0, 8, 3, 2, crateMat);
-            createObstacle(-18, 1.5, 0, 2, 3, 12, crateMat);
-            createObstacle(18, 1.5, 0, 2, 3, 12, crateMat);
         }
 
         function createObstacle(x, y, z, w, h, d, material) {
@@ -326,26 +325,33 @@
             const suitMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 });
             const vestMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
             const visorMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, metalness: 0.9, roughness: 0.1 });
-            const gunMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8 });
-
-            const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.85, 0.35), suitMat);
-            body.position.y = 0.85;
-
-            const vest = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.55, 0.4), vestMat);
-            vest.position.y = 0.9;
-
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.32), vestMat);
-            head.position.y = 1.55;
-
-            const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.05), visorMat);
-            visor.position.set(0, 1.57, -0.16);
-
-            const enemyGun = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.5), gunMat);
-            enemyGun.position.set(0.18, 0.88, -0.35);
-
-            group.add(body, vest, head, visor, enemyGun);
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.85, 0.35), suitMat); body.position.y = 0.85;
+            const vest = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.55, 0.4), vestMat); vest.position.y = 0.9;
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.32), vestMat); head.position.y = 1.55;
+            const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.05), visorMat); visor.position.set(0, 1.57, -0.16);
+            group.add(body, vest, head, visor);
             scene.add(group);
             return group;
+        }
+
+        function triggerKillNotification() {
+            const notify = document.getElementById('kill-notify');
+            notify.style.opacity = '1';
+            notify.style.transform = 'translate(-50%, -50%) scale(1.1)';
+            
+            if (killNotifyTimeout) clearTimeout(killNotifyTimeout);
+            killNotifyTimeout = setTimeout(() => {
+                notify.style.opacity = '0';
+                notify.style.transform = 'translate(-50%, -50%) scale(1.0)';
+            }, 1500);
+
+            // Záznam do Kill Feedu
+            const feed = document.getElementById('kill-feed');
+            const entry = document.createElement('div');
+            entry.className = 'bg-slate-900/90 text-red-400 border border-red-500/40 px-3 py-1 rounded-lg shadow-md animate-bounce';
+            entry.innerText = '⚔️ Zabil jsi protivníka!';
+            feed.appendChild(entry);
+            setTimeout(() => entry.remove(), 4000);
         }
 
         function renderScoreboard(players) {
@@ -355,12 +361,20 @@
             const sorted = Object.keys(players).map(id => ({ id, kills: players[id].kills || 0 }))
                 .sort((a, b) => b.kills - a.kills);
 
+            if (players[socket.id]) {
+                const currentKills = players[socket.id].kills || 0;
+                if (currentKills > prevKills) {
+                    triggerKillNotification();
+                }
+                prevKills = currentKills;
+            }
+
             sorted.forEach(p => {
                 const item = document.createElement('div');
                 item.className = 'flex justify-between items-center py-0.5 border-b border-slate-800/50';
                 const isMe = p.id === socket.id;
                 item.innerHTML = `
-                    <span class="${isMe ? 'text-amber-400 font-bold' : 'text-slate-300'}">${isMe ? 'Ty (Hráč)' : 'Hráč ' + p.id.substring(0, 4)}</span>
+                    <span class="${isMe ? 'text-amber-400 font-bold' : 'text-slate-300'}">${isMe ? 'Ty' : 'Hráč ' + p.id.substring(0, 4)}</span>
                     <span class="text-emerald-400 font-mono font-bold">${p.kills} K</span>
                 `;
                 list.appendChild(item);
@@ -371,9 +385,7 @@
             const hitmark = document.getElementById('hitmark');
             hitmark.style.opacity = '1';
             if (hitmarkTimeout) clearTimeout(hitmarkTimeout);
-            hitmarkTimeout = setTimeout(() => {
-                hitmark.style.opacity = '0';
-            }, 120);
+            hitmarkTimeout = setTimeout(() => hitmark.style.opacity = '0', 120);
         }
 
         function setupSocketListeners() {
@@ -395,9 +407,7 @@
                 otherPlayers[data.id].position.set(data.player.x, 0, data.player.z);
             });
 
-            socket.on('scoreUpdate', (data) => {
-                renderScoreboard(data.players);
-            });
+            socket.on('scoreUpdate', (data) => renderScoreboard(data.players));
 
             socket.on('playerMoved', (data) => {
                 if (otherPlayers[data.id]) {
@@ -407,17 +417,12 @@
                 }
             });
 
-            // Potvrzení zásažení protihráče -> Aktivace hitmarku
-            socket.on('hitConfirmed', () => {
-                triggerHitmark();
-            });
+            socket.on('hitConfirmed', () => triggerHitmark());
 
-            // Přijetí poškození
             socket.on('takeDamage', (data) => {
                 if (myHp > 0) {
                     myHp -= data.damage;
                     document.getElementById('hp').innerText = Math.max(0, myHp);
-                    
                     const vignette = document.getElementById('hit-vignette');
                     vignette.classList.add('active');
                     setTimeout(() => vignette.classList.remove('active'), 250);
@@ -429,9 +434,7 @@
                 }
             });
 
-            socket.on('spawnFlashbang', (data) => {
-                spawnVisualGrenade(data.pos, data.velocity, false);
-            });
+            socket.on('spawnFlashbang', (data) => spawnVisualGrenade(data.pos, data.velocity, false));
 
             socket.on('flashbangDetonated', (data) => {
                 const myPos = yawObject.position.clone();
@@ -439,25 +442,18 @@
                 const dist = myPos.distanceTo(flashPos);
 
                 if (dist < 22 && myHp > 0) {
-                    const camDir = new THREE.Vector3();
-                    camera.getWorldDirection(camDir);
-
+                    const camDir = new THREE.Vector3(); camera.getWorldDirection(camDir);
                     const dirToFlash = flashPos.clone().sub(myPos).normalize();
                     const dot = camDir.dot(dirToFlash);
 
                     let intensity = 0;
-                    if (dot > 0.2) {
-                        intensity = (dist < 10) ? 1.0 : (1.0 - (dist - 10) / 12);
-                    } else if (dot > -0.3) {
-                        intensity = 0.3;
-                    } else {
-                        intensity = 0.08;
-                    }
+                    if (dot > 0.2) intensity = (dist < 10) ? 1.0 : (1.0 - (dist - 10) / 12);
+                    else if (dot > -0.3) intensity = 0.3;
+                    else intensity = 0.08;
 
                     if (intensity > 0.05) {
                         const flashOverlay = document.getElementById('flashbang-overlay');
                         flashOverlay.style.opacity = intensity.toString();
-                        
                         const duration = Math.max(1000, 4500 * intensity);
                         setTimeout(() => {
                             flashOverlay.style.transition = `opacity ${duration / 1000}s ease-out`;
@@ -480,21 +476,12 @@
             const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffea00 });
             const tracerGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.8);
             const tracer = new THREE.Mesh(tracerGeo, tracerMat);
-
             tracer.position.copy(startPos);
-            
-            const targetPos = startPos.clone().add(dirVector);
-            tracer.lookAt(targetPos);
+            tracer.lookAt(startPos.clone().add(dirVector));
             tracer.rotateX(Math.PI / 2);
-
             scene.add(tracer);
 
-            bullets.push({
-                mesh: tracer,
-                dir: dirVector.clone().normalize(),
-                distanceTraveled: 0,
-                maxDistance: 60
-            });
+            bullets.push({ mesh: tracer, dir: dirVector.clone().normalize(), distanceTraveled: 0, maxDistance: 60 });
         }
 
         function spawnVisualGrenade(pos, velocity, isMaster) {
@@ -504,43 +491,27 @@
             mesh.position.copy(pos);
             scene.add(mesh);
 
-            activeGrenades.push({
-                mesh: mesh,
-                velocity: new THREE.Vector3(velocity.x, velocity.y, velocity.z),
-                timer: 2.2,
-                isMaster: isMaster
-            });
+            activeGrenades.push({ mesh: mesh, velocity: new THREE.Vector3(velocity.x, velocity.y, velocity.z), timer: 2.2, isMaster: isMaster });
         }
 
         function throwFlashbang() {
             if (!isLocked || myHp <= 0 || flashbangsCount <= 0) return;
-
             flashbangsCount--;
             document.getElementById('flash-count').innerText = `${flashbangsCount} / 2`;
 
-            const startPos = new THREE.Vector3();
-            camera.getWorldPosition(startPos);
-            
-            const dir = new THREE.Vector3();
-            camera.getWorldDirection(dir);
-            
+            const startPos = new THREE.Vector3(); camera.getWorldPosition(startPos);
+            const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
             startPos.add(dir.clone().multiplyScalar(0.5));
-            const velocity = dir.multiplyScalar(14);
-            velocity.y += 3;
+            const velocity = dir.multiplyScalar(14); velocity.y += 3;
 
             spawnVisualGrenade(startPos, velocity, true);
-
-            socket.emit('throwFlashbang', {
-                pos: { x: startPos.x, y: startPos.y, z: startPos.z },
-                velocity: { x: velocity.x, y: velocity.y, z: velocity.z }
-            });
+            socket.emit('throwFlashbang', { pos: { x: startPos.x, y: startPos.y, z: startPos.z }, velocity: { x: velocity.x, y: velocity.y, z: velocity.z } });
         }
 
         function reload() {
             const w = WEAPONS[currentWeaponKey];
             if (isReloading || ammoState[currentWeaponKey] === w.maxAmmo) return;
             isReloading = true;
-            
             let startRot = currentGunGroup.rotation.x;
             currentGunGroup.rotation.x = -0.8;
             document.getElementById('ammo').innerText = "RELOAD";
@@ -555,16 +526,14 @@
 
         function respawn() {
             myHp = 100;
-            flashbangsCount = 2; // Obnovení granátů na 2
+            flashbangsCount = 2;
             document.getElementById('flash-count').innerText = '2 / 2';
-
             ammoState = { rifle: WEAPONS.rifle.maxAmmo, sniper: WEAPONS.sniper.maxAmmo };
             stamina = maxStamina;
             document.getElementById('hp').innerText = myHp;
             document.getElementById('ammo').innerText = ammoState[currentWeaponKey];
             document.getElementById('stamina-bar').style.width = '100%';
             document.getElementById('death-screen').classList.add('hidden');
-            
             socket.emit('respawnRequest');
             document.body.requestPointerLock();
         }
@@ -578,8 +547,7 @@
             if (code === 'ControlLeft' || code === 'KeyC') isCrouching = state;
             
             if (code === 'Space' && state && isGrounded && !isCrouching) {
-                yVelocity = 6.0;
-                isGrounded = false;
+                yVelocity = 6.0; isGrounded = false;
             }
 
             if (code === 'KeyR' && state) reload();
@@ -606,13 +574,9 @@
 
         function onMouseMove(e) {
             if (!isLocked || myHp <= 0) return;
-
-            const movementX = e.movementX || 0;
-            const movementY = e.movementY || 0;
             const sens = isAiming ? 0.001 : 0.002;
-
-            yawObject.rotation.y -= movementX * sens;
-            pitchObject.rotation.x -= movementY * sens;
+            yawObject.rotation.y -= (e.movementX || 0) * sens;
+            pitchObject.rotation.x -= (e.movementY || 0) * sens;
             pitchObject.rotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitchObject.rotation.x));
         }
 
@@ -623,7 +587,6 @@
                 new THREE.Vector3(newPosition.x - playerRadius, newPosition.y - currentH, newPosition.z - playerRadius),
                 new THREE.Vector3(newPosition.x + playerRadius, newPosition.y, newPosition.z + playerRadius)
             );
-
             for (let i = 0; i < obstacles.length; i++) {
                 if (playerBox.intersectsBox(obstacles[i])) return true;
             }
@@ -634,20 +597,14 @@
             const now = performance.now();
             const w = WEAPONS[currentWeaponKey];
 
-            if (now - lastShotTime < w.fireRate) return;
-            if (isReloading) return;
-
-            if (ammoState[currentWeaponKey] <= 0) {
-                reload();
-                return;
-            }
+            if (now - lastShotTime < w.fireRate || isReloading) return;
+            if (ammoState[currentWeaponKey] <= 0) { reload(); return; }
 
             lastShotTime = now;
             ammoState[currentWeaponKey]--;
             document.getElementById('ammo').innerText = ammoState[currentWeaponKey];
 
-            muzzleFlash.material.opacity = 1;
-            flashTimer = 0.05;
+            muzzleFlash.material.opacity = 1; flashTimer = 0.05;
 
             const gunWorldPos = new THREE.Vector3();
             muzzleFlash.getWorldPosition(gunWorldPos);
@@ -681,7 +638,6 @@
                 const moveStep = 90 * delta;
                 b.mesh.position.addScaledVector(b.dir, moveStep);
                 b.distanceTraveled += moveStep;
-
                 if (b.distanceTraveled >= b.maxDistance) {
                     scene.remove(b.mesh);
                     bullets.splice(i, 1);
@@ -691,26 +647,17 @@
             for (let i = activeGrenades.length - 1; i >= 0; i--) {
                 const g = activeGrenades[i];
                 g.timer -= delta;
-                
                 g.velocity.y -= 15.0 * delta;
                 g.mesh.position.addScaledVector(g.velocity, delta);
-                g.mesh.rotation.x += 5 * delta;
-                g.mesh.rotation.z += 5 * delta;
 
                 if (g.mesh.position.y <= 0.08) {
                     g.mesh.position.y = 0.08;
-                    g.velocity.y *= -0.4;
-                    g.velocity.x *= 0.6;
-                    g.velocity.z *= 0.6;
+                    g.velocity.y *= -0.4; g.velocity.x *= 0.6; g.velocity.z *= 0.6;
                 }
 
                 if (g.timer <= 0) {
                     if (g.isMaster) {
-                        socket.emit('flashbangExploded', {
-                            x: g.mesh.position.x,
-                            y: g.mesh.position.y,
-                            z: g.mesh.position.z
-                        });
+                        socket.emit('flashbangExploded', { x: g.mesh.position.x, y: g.mesh.position.y, z: g.mesh.position.z });
                     }
                     scene.remove(g.mesh);
                     activeGrenades.splice(i, 1);
@@ -722,11 +669,9 @@
             if (!isGrounded) {
                 yawObject.position.y += yVelocity * delta;
                 yVelocity -= 18.0 * delta;
-
                 if (yawObject.position.y <= targetEyeHeight) {
                     yawObject.position.y = targetEyeHeight;
-                    yVelocity = 0;
-                    isGrounded = true;
+                    yVelocity = 0; isGrounded = true;
                 }
             } else {
                 yawObject.position.y += (targetEyeHeight - yawObject.position.y) * 0.2;
@@ -767,15 +712,9 @@
                 if (moveLeft) yawObject.translateX(-moveDistance);
                 if (moveRight) yawObject.translateX(moveDistance);
 
-                if (checkCollision(yawObject.position)) {
-                    yawObject.position.copy(oldPos);
-                }
+                if (checkCollision(yawObject.position)) yawObject.position.copy(oldPos);
 
-                socket.emit('playerMove', {
-                    x: yawObject.position.x,
-                    z: yawObject.position.z,
-                    rotation: yawObject.rotation.y
-                });
+                socket.emit('playerMove', { x: yawObject.position.x, z: yawObject.position.z, rotation: yawObject.rotation.y });
             }
 
             renderer.render(scene, camera);
