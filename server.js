@@ -16,7 +16,9 @@ io.on('connection', (socket) => {
     players[socket.id] = {
         x: (Math.random() - 0.5) * 20,
         z: (Math.random() - 0.5) * 20,
-        rotation: 0
+        rotation: 0,
+        kills: 0,
+        hp: 100
     };
 
     socket.emit('currentPlayers', players);
@@ -32,7 +34,33 @@ io.on('connection', (socket) => {
     });
 
     socket.on('shoot', (data) => {
-        io.emit('playerShot', { shooterId: socket.id, hitPlayerId: data.hitPlayerId, damage: data.damage });
+        const victim = players[data.hitPlayerId];
+        if (victim && victim.hp > 0) {
+            victim.hp -= data.damage;
+            
+            // Informujeme střelce o platném zásahu pro Hitmark
+            socket.emit('hitConfirmed', { damage: data.damage, hitPlayerId: data.hitPlayerId });
+            
+            // Informujeme zasaženého hráče
+            io.to(data.hitPlayerId).emit('takeDamage', { damage: data.damage, shooterId: socket.id });
+
+            // Zpracování killu
+            if (victim.hp <= 0) {
+                if (players[socket.id]) {
+                    players[socket.id].kills += 1;
+                }
+                io.emit('scoreUpdate', { players });
+            }
+        }
+    });
+
+    socket.on('respawnRequest', () => {
+        if (players[socket.id]) {
+            players[socket.id].hp = 100;
+            players[socket.id].x = (Math.random() - 0.5) * 20;
+            players[socket.id].z = (Math.random() - 0.5) * 20;
+            io.emit('scoreUpdate', { players });
+        }
     });
 
     socket.on('throwFlashbang', (data) => {
@@ -47,10 +75,10 @@ io.on('connection', (socket) => {
         console.log('Hráč odpojen:', socket.id);
         delete players[socket.id];
         io.emit('playerDisconnected', socket.id);
+        io.emit('scoreUpdate', { players });
     });
 });
 
-// Správné nastavení portu a hostu pro Render.com
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server běží na portu ${PORT}`);
