@@ -35,9 +35,13 @@ io.on('connection', (socket) => {
         io.emit('playerShot', { shooterId: socket.id, hitPlayerId: data.hitPlayerId, damage: data.damage });
     });
 
-    // Zpracování hodení Flashbangu
     socket.on('throwFlashbang', (data) => {
-        socket.broadcast.emit('flashbangExploded', data);
+        // Předání dat o vrhnutém granátu všem ostatním klientům
+        socket.broadcast.emit('spawnFlashbang', data);
+    });
+
+    socket.on('flashbangExploded', (data) => {
+        io.emit('flashbangDetonated', data);
     });
 
     socket.on('disconnect', () => {
