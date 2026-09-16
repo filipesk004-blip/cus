@@ -55,7 +55,7 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.getElementById('game-container').appendChild(renderer.domElement);
 
-            const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+            const ambient = new THREE.AmbientLight(0xffffff, 0.8);
             scene.add(ambient);
 
             const pointLight = new THREE.PointLight(0xffaa44, 1.2, 35);
@@ -79,12 +79,12 @@
 
         function createPlayerGun() {
             gunGroup = new THREE.Group();
-            const gunMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.2 });
+            const gunMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.2 });
 
-            const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.5), gunMat);
-            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.3), gunMat);
+            const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.15, 0.5), gunMat);
+            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.4), gunMat);
             barrel.rotation.x = Math.PI / 2;
-            barrel.position.set(0, 0.02, -0.35);
+            barrel.position.set(0, 0.02, -0.4);
 
             gunGroup.add(gunBody, barrel);
 
@@ -92,10 +92,12 @@
             const flashMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0 });
             muzzleFlash = new THREE.Mesh(flashGeo, flashMat);
             muzzleFlash.rotation.x = -Math.PI / 2;
-            muzzleFlash.position.set(0, 0.02, -0.5);
+            muzzleFlash.position.set(0, 0.02, -0.6);
             gunGroup.add(muzzleFlash);
 
             gunGroup.position.set(0.25, -0.22, -0.5);
+            
+            // Připojení zbraně přímo ke kameře
             camera.add(gunGroup);
             scene.add(camera);
         }
@@ -124,13 +126,13 @@
 
         function createEnemyMesh() {
             const group = new THREE.Group();
-            const armorMat = new THREE.MeshStandardMaterial({ color: 0x991b1b });
-            const vestMat = new THREE.MeshStandardMaterial({ color: 0x18181b });
+            const armorMat = new THREE.MeshStandardMaterial({ color: 0xd97706 });
+            const vestMat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
 
-            const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.9, 0.4), armorMat);
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.2, 0.4), armorMat);
             body.position.y = 0.9;
             const head = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), vestMat);
-            head.position.y = 1.6;
+            head.position.y = 1.7;
             const enemyGun = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.6), vestMat);
             enemyGun.position.set(-0.3, 1.0, 0.3);
 
@@ -260,7 +262,6 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // Spuštění celé hry
         init();
     </script>
 </body>
