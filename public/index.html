@@ -2,7 +2,7 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS Siege - Full-Auto & Crouch Anims</title>
+    <title>3D FPS Siege - Red Dot Sight</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
@@ -63,7 +63,7 @@
         <div class="text-xs text-slate-300 space-y-0.5">
             <div>Pohyb: <span class="text-amber-400 font-bold">WASD</span> | Běh: <span class="text-amber-400 font-bold">Shift</span></div>
             <div>Skok: <span class="text-amber-400 font-bold">Space</span> | Skrčení: <span class="text-amber-400 font-bold">Ctrl / C</span></div>
-            <div>Střelba (Auto): <span class="text-amber-400 font-bold">Držet LMB</span> | Scope: <span class="text-amber-400 font-bold">RMB</span></div>
+            <div>Střelba (Auto): <span class="text-amber-400 font-bold">Držet LMB</span> | Kolimátor: <span class="text-amber-400 font-bold">RMB</span></div>
             <div>Vybavení: <span class="text-amber-400 font-bold">1 / 2</span> | Flashbang: <span class="text-amber-400 font-bold">G</span></div>
         </div>
     </div>
@@ -134,9 +134,10 @@
         const crouchingHeight = 0.9;
         let targetEyeHeight = standingHeight;
 
+        // Upravená pozice aimPos pro M4, aby byla výška kolimátoru přesně v centru kamery
         const WEAPONS = {
-            m4: { name: 'M4A1 Custom', maxAmmo: 30, damage: 18, fireRate: 90, auto: true, zoomFov: 50, bodyPos: [0.2, -0.2, -0.4], aimPos: [0, -0.14, -0.26] },
-            sniper: { name: 'Sniperka', maxAmmo: 5, damage: 65, fireRate: 850, auto: false, zoomFov: 20, bodyPos: [0.24, -0.24, -0.48], aimPos: [0, -0.16, -0.26] }
+            m4: { name: 'M4A1 Custom', maxAmmo: 30, damage: 18, fireRate: 90, auto: true, zoomFov: 45, bodyPos: [0.2, -0.2, -0.4], aimPos: [0, -0.118, -0.22] },
+            sniper: { name: 'Sniperka', maxAmmo: 5, damage: 65, fireRate: 850, auto: false, zoomFov: 18, bodyPos: [0.24, -0.24, -0.48], aimPos: [0, -0.145, -0.22] }
         };
 
         let currentWeaponKey = 'm4';
@@ -226,9 +227,20 @@
             const darkMetal = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.85, roughness: 0.2 });
             const blackSteel = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.1 });
             const tanStock = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.5 });
-            const scopeGlass = new THREE.MeshStandardMaterial({ color: 0x00ffcc, metalness: 1.0, roughness: 0.0 });
+            
+            // Průhledné sklo pro kolimátor
+            const scopeGlassMat = new THREE.MeshStandardMaterial({ 
+                color: 0x66ffff, 
+                transparent: true, 
+                opacity: 0.3, 
+                metalness: 0.9, 
+                roughness: 0.1 
+            });
 
-            // M4A1 Full-Auto
+            // Červená tečka uvnitř kolimátoru
+            const redDotMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+
+            // M4A1 s detailním kolimátorem
             m4Group = new THREE.Group();
             const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, 0.28), darkMetal);
             const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.05, 0.25), blackSteel);
@@ -244,12 +256,20 @@
             const mag = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.16, 0.06), blackSteel);
             mag.position.set(0, -0.1, -0.04); mag.rotation.x = 0.2;
 
-            const sightBase = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.08), blackSteel);
-            sightBase.position.set(0, 0.055, -0.02);
-            const sightGlass = new THREE.Mesh(new THREE.RingGeometry(0.015, 0.02, 16), scopeGlass);
-            sightGlass.position.set(0, 0.08, -0.02);
+            // Konstrukce Kolimátoru (Red Dot Sight)
+            const sightBase = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.015, 0.09), blackSteel);
+            sightBase.position.set(0, 0.052, -0.04);
 
-            m4Group.add(receiver, handguard, barrel, stock, grip, foregrip, mag, sightBase, sightGlass);
+            const sightFrame = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.042, 0.01), blackSteel);
+            sightFrame.position.set(0, 0.073, -0.04);
+
+            const sightGlass = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.036, 0.002), scopeGlassMat);
+            sightGlass.position.set(0, 0.073, -0.04);
+
+            const redDot = new THREE.Mesh(new THREE.SphereGeometry(0.0018, 8, 8), redDotMat);
+            redDot.position.set(0, 0.073, -0.041);
+
+            m4Group.add(receiver, handguard, barrel, stock, grip, foregrip, mag, sightBase, sightFrame, sightGlass, redDot);
 
             // Odstřelovací puška
             sniperGroup = new THREE.Group();
@@ -260,7 +280,7 @@
             sStock.position.set(0, -0.01, 0.3);
             const sScopeBody = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.28), blackSteel);
             sScopeBody.rotation.x = Math.PI / 2; sScopeBody.position.set(0, 0.1, -0.05);
-            const sScopeLens = new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.027, 0.01), scopeGlass);
+            const sScopeLens = new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.027, 0.01), scopeGlassMat);
             sScopeLens.rotation.x = Math.PI / 2; sScopeLens.position.set(0, 0.1, -0.19);
             const sMag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.08), blackSteel);
             sMag.position.set(0, -0.1, -0.08);
@@ -312,7 +332,9 @@
 
         function switchWeapon(key) {
             if (isReloading || currentWeaponKey === key) return;
-            isAiming = false; camera.fov = 75; camera.updateProjectionMatrix();
+            isAiming = false; 
+            document.getElementById('crosshair').style.opacity = '1';
+            camera.fov = 75; camera.updateProjectionMatrix();
 
             currentGunGroup.remove(muzzleFlash);
             m4Group.visible = false; sniperGroup.visible = false;
@@ -579,12 +601,18 @@
         function onMouseDown(e) {
             if (!isLocked || myHp <= 0) return;
             if (e.button === 0) { isMouseDown = true; shoot(); }
-            if (e.button === 2) isAiming = true;
+            if (e.button === 2) {
+                isAiming = true;
+                document.getElementById('crosshair').style.opacity = '0'; // Skryje 2D zaměřovač při míření přes kolimátor
+            }
         }
 
         function onMouseUp(e) {
             if (e.button === 0) isMouseDown = false;
-            if (e.button === 2) isAiming = false;
+            if (e.button === 2) {
+                isAiming = false;
+                document.getElementById('crosshair').style.opacity = '1';
+            }
         }
 
         function onWheel(e) {
@@ -600,8 +628,8 @@
             pitchObject.rotation.x -= (e.movementY || 0) * sens;
             pitchObject.rotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitchObject.rotation.x));
 
-            swayX -= (e.movementX || 0) * 0.0003;
-            swayY += (e.movementY || 0) * 0.0003;
+            swayX -= (e.movementX || 0) * (isAiming ? 0.0001 : 0.0003);
+            swayY += (e.movementY || 0) * (isAiming ? 0.0001 : 0.0003);
         }
 
         function checkCollision(newPosition) {
@@ -629,7 +657,7 @@
             document.getElementById('ammo').innerText = ammoState[currentWeaponKey];
 
             muzzleFlash.material.opacity = 1; flashTimer = 0.04;
-            recoilOffset = currentWeaponKey === 'm4' ? 0.04 : 0.09;
+            recoilOffset = currentWeaponKey === 'm4' ? (isAiming ? 0.02 : 0.04) : 0.09;
 
             const gunWorldPos = new THREE.Vector3();
             muzzleFlash.getWorldPosition(gunWorldPos);
@@ -717,23 +745,24 @@
                 bobTimer += delta * 2;
             }
 
-            const bobX = Math.cos(bobTimer) * (isMoving ? 0.01 : 0.002);
-            const bobY = Math.sin(bobTimer * 2) * (isMoving ? 0.01 : 0.002);
+            const bobAmp = isAiming ? 0.0005 : (isMoving ? 0.01 : 0.002);
+            const bobX = Math.cos(bobTimer) * bobAmp;
+            const bobY = Math.sin(bobTimer * 2) * bobAmp;
 
             const targetFov = isAiming ? WEAPONS[currentWeaponKey].zoomFov : 75;
             const basePos = isAiming ? WEAPONS[currentWeaponKey].aimPos : WEAPONS[currentWeaponKey].bodyPos;
 
-            camera.fov += (targetFov - camera.fov) * 0.15;
+            camera.fov += (targetFov - camera.fov) * 0.2;
             camera.updateProjectionMatrix();
 
             let reloadRot = isReloading ? -0.7 : 0;
 
-            currentGunGroup.position.x += (basePos[0] + swayX + bobX - currentGunGroup.position.x) * 0.2;
-            currentGunGroup.position.y += (basePos[1] + swayY + bobY - currentGunGroup.position.y) * 0.2;
-            currentGunGroup.position.z += (basePos[2] + recoilOffset - currentGunGroup.position.z) * 0.2;
+            currentGunGroup.position.x += (basePos[0] + swayX + bobX - currentGunGroup.position.x) * 0.25;
+            currentGunGroup.position.y += (basePos[1] + swayY + bobY - currentGunGroup.position.y) * 0.25;
+            currentGunGroup.position.z += (basePos[2] + recoilOffset - currentGunGroup.position.z) * 0.25;
             currentGunGroup.rotation.x += (reloadRot - currentGunGroup.rotation.x) * 0.2;
 
-            // Animace klekání a pohledu protivníků
+            // Animace klekání ostatních hráčů
             Object.keys(otherPlayers).forEach(id => {
                 const enemy = otherPlayers[id];
                 const bodyPivot = enemy.getObjectByName("bodyPivot");
