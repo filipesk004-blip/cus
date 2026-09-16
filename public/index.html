@@ -62,12 +62,8 @@
             pointLight.position.set(0, 6, 0);
             scene.add(pointLight);
 
-            // Vytvoření zbraně pro FPS pohled
             createPlayerGun();
-
-            // Podlaha a mapa
             buildMap();
-
             setupSocketListeners();
 
             document.body.addEventListener('click', () => { if (!isLocked && myHp > 0) document.body.requestPointerLock(); });
@@ -116,7 +112,6 @@
             createWall(-25, 2.5, 0, 1, 5, 50, wallMat);
             createWall(25, 2.5, 0, 1, 5, 50, wallMat);
             
-            // Překážky uprostřed
             createWall(-10, 2.5, 0, 1, 5, 15, wallMat);
             createWall(10, 2.5, 0, 1, 5, 15, wallMat);
         }
@@ -207,7 +202,6 @@
         function shoot() {
             if (!isLocked || myHp <= 0) return;
 
-            // Zášleh a zpětný ráz
             muzzleFlash.material.opacity = 1;
             flashTimer = 0.05;
             gunGroup.position.z = -0.4;
@@ -266,6 +260,7 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
+        // Spuštění celé hry
         init();
     </script>
 </body>
