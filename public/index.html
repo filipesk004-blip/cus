@@ -16,22 +16,41 @@
         #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #00ffcc; }
         #crosshair::before { top: 3px; left: -6px; width: 20px; height: 2px; }
         #crosshair::after { top: -6px; left: 3px; width: 2px; height: 20px; }
+        
+        /* Indikátor zásahu (červené okraje) */
+        #hit-vignette {
+            position: fixed; inset: 0; pointer-events: none; z-index: 15;
+            box-shadow: inset 0 0 100px rgba(239, 68, 68, 0);
+            transition: box-shadow 0.1s ease-out;
+        }
+        #hit-vignette.active {
+            box-shadow: inset 0 0 120px rgba(239, 68, 68, 0.8);
+        }
     </style>
 </head>
 <body class="select-none">
     <div id="crosshair"></div>
+    <div id="hit-vignette"></div>
     
     <!-- Horní nápověda -->
     <div class="fixed top-4 left-4 z-10 text-white pointer-events-none bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700/80 shadow-2xl">
         <h1 class="text-amber-400 font-black tracking-wider text-sm mb-1 uppercase">Siege 3D Tactical</h1>
         <div class="text-xs text-slate-300 space-y-0.5">
-            <div>Pohyb: <span class="text-amber-400 font-bold">WASD</span></div>
+            <div>Pohyb: <span class="text-amber-400 font-bold">WASD</span> | Běh: <span class="text-amber-400 font-bold">Shift</span></div>
             <div>Střelba: <span class="text-amber-400 font-bold">LMB</span> | Přebití: <span class="text-amber-400 font-bold">R</span></div>
         </div>
     </div>
 
-    <!-- Nové HUD vpravo dole (HP + Zásobník) -->
+    <!-- HUD vpravo dole -->
     <div class="fixed bottom-6 right-6 z-10 pointer-events-none flex items-center gap-4 bg-slate-900/90 backdrop-blur-md px-6 py-4 rounded-2xl border border-slate-700/80 shadow-2xl">
+        <!-- STAMINA -->
+        <div class="flex flex-col items-end border-r border-slate-700 pr-4 w-28">
+            <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Stamina</span>
+            <div class="w-full bg-slate-800 h-2 rounded-full mt-2 overflow-hidden border border-slate-700">
+                <div id="stamina-bar" class="bg-amber-400 h-full w-full transition-all duration-75"></div>
+            </div>
+        </div>
+
         <!-- ZDRAVÍ -->
         <div class="flex flex-col items-end border-r border-slate-700 pr-4">
             <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Zdraví</span>
@@ -51,7 +70,7 @@
         </div>
     </div>
 
-    <!-- Death Screen / Respawn Menu -->
+    <!-- Death Screen -->
     <div id="death-screen" class="hidden fixed inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md text-white">
         <h2 class="text-5xl font-black text-red-500 tracking-wider mb-2">BYL JSI ELIMINOVÁN</h2>
         <p class="text-slate-400 mb-6">Příště buď rychlejší na spoušti.</p>
@@ -65,7 +84,7 @@
     <script>
         const socket = io();
         let scene, camera, renderer;
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, isSprinting = false;
         let prevTime = performance.now();
 
         let yawObject, pitchObject;
@@ -74,7 +93,11 @@
         const maxAmmo = 30;
         let isReloading = false;
 
+        let stamina = 100;
+        const maxStamina = 100;
+
         let otherPlayers = {};
+        let obstacles = [];
         let gunGroup, muzzleFlash;
         let flashTimer = 0;
         let isLocked = false;
@@ -125,7 +148,6 @@
             animate();
         }
 
-        // Vylepšená zbraň
         function createPlayerGun() {
             gunGroup = new THREE.Group();
             
@@ -136,7 +158,6 @@
             barrel.rotation.x = Math.PI / 2;
             barrel.position.set(0, 0.02, -0.35);
 
-            // Zásobník
             const magMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
             const mag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.08), magMat);
             mag.position.set(0, -0.1, -0.05);
@@ -162,19 +183,35 @@
             scene.add(floor);
 
             const wallMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
-            createWall(0, 2.5, -30, 60, 5, 1, wallMat);
-            createWall(0, 2.5, 30, 60, 5, 1, wallMat);
-            createWall(-30, 2.5, 0, 1, 5, 60, wallMat);
-            createWall(30, 2.5, 0, 1, 5, 60, wallMat);
+            const crateMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 });
+
+            // Obvodové stěny
+            createObstacle(0, 2.5, -30, 60, 5, 1, wallMat);
+            createObstacle(0, 2.5, 30, 60, 5, 1, wallMat);
+            createObstacle(-30, 2.5, 0, 1, 5, 60, wallMat);
+            createObstacle(30, 2.5, 0, 1, 5, 60, wallMat);
+
+            // Překážky na mapě (bedny a zdi)
+            createObstacle(-10, 1.25, -10, 4, 2.5, 4, crateMat);
+            createObstacle(10, 1.25, -10, 4, 2.5, 4, crateMat);
+            createObstacle(-10, 1.25, 10, 4, 2.5, 4, crateMat);
+            createObstacle(10, 1.25, 10, 4, 2.5, 4, crateMat);
+            
+            createObstacle(0, 1.5, 0, 8, 3, 2, crateMat);
+            createObstacle(-18, 1.5, 0, 2, 3, 12, crateMat);
+            createObstacle(18, 1.5, 0, 2, 3, 12, crateMat);
         }
 
-        function createWall(x, y, z, w, h, d, material) {
-            const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-            wall.position.set(x, y, z);
-            scene.add(wall);
+        function createObstacle(x, y, z, w, h, d, material) {
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+            mesh.position.set(x, y, z);
+            scene.add(mesh);
+
+            // Uložení hranic překážky pro kolize (AABB)
+            const box = new THREE.Box3().setFromObject(mesh);
+            obstacles.push(box);
         }
 
-        // Pokročilejší 3D model protihráče
         function createEnemyMesh() {
             const group = new THREE.Group();
             
@@ -183,26 +220,21 @@
             const visorMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, metalness: 0.9, roughness: 0.1 });
             const gunMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8 });
 
-            // Tělo
             const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.85, 0.35), suitMat);
             body.position.y = 0.85;
 
-            // Taktická vesta a Batoh
             const vest = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.55, 0.4), vestMat);
             vest.position.y = 0.9;
 
             const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.2), vestMat);
             backpack.position.set(0, 0.9, 0.28);
 
-            // Hlava s přilbou
             const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.32), vestMat);
             head.position.y = 1.55;
 
-            // Svítící vizor
             const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.05), visorMat);
             visor.position.set(0, 1.57, -0.16);
 
-            // Ruce drží zbraň
             const armL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.55, 0.14), suitMat);
             armL.position.set(-0.35, 0.9, -0.1);
             armL.rotation.x = -Math.PI / 4;
@@ -211,7 +243,6 @@
             armR.position.set(0.35, 0.9, -0.1);
             armR.rotation.x = -Math.PI / 4;
 
-            // Zbraň v ruce
             const enemyGun = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.5), gunMat);
             enemyGun.position.set(0.18, 0.88, -0.35);
 
@@ -250,6 +281,12 @@
                 if (data.hitPlayerId === socket.id && myHp > 0) {
                     myHp -= 25;
                     document.getElementById('hp').innerText = Math.max(0, myHp);
+                    
+                    // Efekt červených okrajů při zásahu
+                    const vignette = document.getElementById('hit-vignette');
+                    vignette.classList.add('active');
+                    setTimeout(() => vignette.classList.remove('active'), 250);
+
                     if (myHp <= 0) {
                         document.exitPointerLock();
                         document.getElementById('death-screen').classList.remove('hidden');
@@ -269,10 +306,8 @@
             if (isReloading || ammo === maxAmmo) return;
             isReloading = true;
             
-            // Animace přebití (sklopení zbraně)
             let startRot = gunGroup.rotation.x;
             gunGroup.rotation.x = -0.8;
-
             document.getElementById('ammo').innerText = "RELOAD";
 
             setTimeout(() => {
@@ -286,12 +321,14 @@
         function respawn() {
             myHp = 100;
             ammo = maxAmmo;
+            stamina = maxStamina;
             document.getElementById('hp').innerText = myHp;
             document.getElementById('ammo').innerText = ammo;
+            document.getElementById('stamina-bar').style.width = '100%';
             document.getElementById('death-screen').classList.add('hidden');
             
-            yawObject.position.x = (Math.random() - 0.5) * 40;
-            yawObject.position.z = (Math.random() - 0.5) * 40;
+            yawObject.position.x = (Math.random() - 0.5) * 20;
+            yawObject.position.z = (Math.random() - 0.5) * 20;
 
             document.body.requestPointerLock();
         }
@@ -301,6 +338,7 @@
             if (code === 'KeyS') moveBackward = state;
             if (code === 'KeyA') moveLeft = state;
             if (code === 'KeyD') moveRight = state;
+            if (code === 'ShiftLeft' || code === 'ShiftRight') isSprinting = state;
             if (code === 'KeyR' && state) reload();
         }
 
@@ -313,6 +351,21 @@
             yawObject.rotation.y -= movementX * 0.002;
             pitchObject.rotation.x -= movementY * 0.002;
             pitchObject.rotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitchObject.rotation.x));
+        }
+
+        function checkCollision(newPosition) {
+            const playerRadius = 0.5;
+            const playerBox = new THREE.Box3(
+                new THREE.Vector3(newPosition.x - playerRadius, 0, newPosition.z - playerRadius),
+                new THREE.Vector3(newPosition.x + playerRadius, 2, newPosition.z + playerRadius)
+            );
+
+            for (let i = 0; i < obstacles.length; i++) {
+                if (playerBox.intersectsBox(obstacles[i])) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         function shoot() {
@@ -352,12 +405,32 @@
             }
 
             if (isLocked && myHp > 0) {
-                const speed = 12.0 * delta;
+                // Výpočet rychlosti & staminy
+                const isMoving = moveForward || moveBackward || moveLeft || moveRight;
+                let speedMultiplier = 5.0; // Pomalejší základní chůze
 
-                if (moveForward) yawObject.translateZ(-speed);
-                if (moveBackward) yawObject.translateZ(speed);
-                if (moveLeft) yawObject.translateX(-speed);
-                if (moveRight) yawObject.translateX(speed);
+                if (isSprinting && isMoving && stamina > 0) {
+                    speedMultiplier = 9.0; // Běh
+                    stamina = Math.max(0, stamina - delta * 35);
+                } else if (!isSprinting && stamina < maxStamina) {
+                    stamina = Math.min(maxStamina, stamina + delta * 20); // Obnova staminy
+                }
+
+                document.getElementById('stamina-bar').style.width = `${(stamina / maxStamina) * 100}%`;
+
+                const moveDistance = speedMultiplier * delta;
+                const oldPos = yawObject.position.clone();
+
+                // Vygenerujeme směr pohybu
+                if (moveForward) yawObject.translateZ(-moveDistance);
+                if (moveBackward) yawObject.translateZ(moveDistance);
+                if (moveLeft) yawObject.translateX(-moveDistance);
+                if (moveRight) yawObject.translateX(moveDistance);
+
+                // Kontrola kolizí (pokud narazí do zdi, vrátí se zpět)
+                if (checkCollision(yawObject.position)) {
+                    yawObject.position.copy(oldPos);
+                }
 
                 socket.emit('playerMove', {
                     x: yawObject.position.x,
