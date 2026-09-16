@@ -17,6 +17,16 @@
         #crosshair::before { top: 3px; left: -6px; width: 20px; height: 2px; }
         #crosshair::after { top: -6px; left: 3px; width: 2px; height: 20px; }
         
+        /* Hitmark Efekt */
+        #hitmark {
+            position: absolute; top: 50%; left: 50%;
+            width: 16px; height: 16px; transform: translate(-50%, -50%) rotate(45deg);
+            pointer-events: none; z-index: 25; opacity: 0; transition: opacity 0.05s ease-out;
+        }
+        #hitmark::before, #hitmark::after { content: ''; position: absolute; background: #ef4444; }
+        #hitmark::before { top: 7px; left: -2px; width: 20px; height: 2px; }
+        #hitmark::after { top: -2px; left: 7px; width: 2px; height: 20px; }
+
         #hit-vignette {
             position: fixed; inset: 0; pointer-events: none; z-index: 15;
             box-shadow: inset 0 0 100px rgba(239, 68, 68, 0);
@@ -35,9 +45,11 @@
 </head>
 <body class="select-none" oncontextmenu="return false;">
     <div id="crosshair"></div>
+    <div id="hitmark"></div>
     <div id="hit-vignette"></div>
     <div id="flashbang-overlay"></div>
     
+    <!-- Horní nápověda -->
     <div class="fixed top-4 left-4 z-10 text-white pointer-events-none bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700/80 shadow-2xl">
         <h1 class="text-amber-400 font-black tracking-wider text-sm mb-1 uppercase">Siege 3D Tactical</h1>
         <div class="text-xs text-slate-300 space-y-0.5">
@@ -48,10 +60,24 @@
         </div>
     </div>
 
+    <!-- Scoreboard vpravo nahoře -->
+    <div class="fixed top-4 right-4 z-10 text-white pointer-events-none bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700/80 shadow-2xl min-w-[200px]">
+        <h2 class="text-xs font-black tracking-widest text-slate-400 uppercase mb-2 border-b border-slate-700 pb-1">TABULKA SKÓRE</h2>
+        <div id="scoreboard-list" class="space-y-1 text-xs font-semibold">
+            <!-- Dynamicky generovaní hráči -->
+        </div>
+    </div>
+
+    <!-- HUD vpravo dole -->
     <div class="fixed bottom-6 right-6 z-10 pointer-events-none flex items-center gap-4 bg-slate-900/90 backdrop-blur-md px-6 py-4 rounded-2xl border border-slate-700/80 shadow-2xl">
         <div class="flex flex-col items-end border-r border-slate-700 pr-4">
             <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Zbraň</span>
             <span id="weapon-name" class="text-lg font-black text-amber-400 uppercase">Rifle</span>
+        </div>
+
+        <div class="flex flex-col items-end border-r border-slate-700 pr-4 w-20">
+            <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Flashbang</span>
+            <span id="flash-count" class="text-xl font-black text-amber-400">2 / 2</span>
         </div>
 
         <div class="flex flex-col items-end border-r border-slate-700 pr-4 w-24">
@@ -78,6 +104,7 @@
         </div>
     </div>
 
+    <!-- Death Screen -->
     <div id="death-screen" class="hidden fixed inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md text-white">
         <h2 class="text-5xl font-black text-red-500 tracking-wider mb-2">BYL JSI ELIMINOVÁN</h2>
         <p class="text-slate-400 mb-6">Příště buď rychlejší na spoušti.</p>
@@ -89,7 +116,6 @@
     <div id="game-container" class="w-full h-screen"></div>
 
     <script>
-        // Automatické připojení k aktuální doméně na Render.com
         const socket = io();
         let scene, camera, renderer;
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, isSprinting = false, isCrouching = false;
@@ -97,6 +123,7 @@
 
         let yawObject, pitchObject;
         let myHp = 100;
+        let flashbangsCount = 2; // Omezení na max 2 flashbangy na život
 
         let yVelocity = 0;
         let isGrounded = true;
@@ -124,6 +151,7 @@
         let activeGrenades = [];
         let rifleGroup, sniperGroup, currentGunGroup, muzzleFlash;
         let flashTimer = 0;
+        let hitmarkTimeout = null;
         let isLocked = false;
 
         function init() {
@@ -320,8 +348,37 @@
             return group;
         }
 
+        function renderScoreboard(players) {
+            const list = document.getElementById('scoreboard-list');
+            list.innerHTML = '';
+            
+            const sorted = Object.keys(players).map(id => ({ id, kills: players[id].kills || 0 }))
+                .sort((a, b) => b.kills - a.kills);
+
+            sorted.forEach(p => {
+                const item = document.createElement('div');
+                item.className = 'flex justify-between items-center py-0.5 border-b border-slate-800/50';
+                const isMe = p.id === socket.id;
+                item.innerHTML = `
+                    <span class="${isMe ? 'text-amber-400 font-bold' : 'text-slate-300'}">${isMe ? 'Ty (Hráč)' : 'Hráč ' + p.id.substring(0, 4)}</span>
+                    <span class="text-emerald-400 font-mono font-bold">${p.kills} K</span>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        function triggerHitmark() {
+            const hitmark = document.getElementById('hitmark');
+            hitmark.style.opacity = '1';
+            if (hitmarkTimeout) clearTimeout(hitmarkTimeout);
+            hitmarkTimeout = setTimeout(() => {
+                hitmark.style.opacity = '0';
+            }, 120);
+        }
+
         function setupSocketListeners() {
             socket.on('currentPlayers', (players) => {
+                renderScoreboard(players);
                 Object.keys(players).forEach((id) => {
                     if (id === socket.id) {
                         yawObject.position.x = players[id].x;
@@ -338,6 +395,10 @@
                 otherPlayers[data.id].position.set(data.player.x, 0, data.player.z);
             });
 
+            socket.on('scoreUpdate', (data) => {
+                renderScoreboard(data.players);
+            });
+
             socket.on('playerMoved', (data) => {
                 if (otherPlayers[data.id]) {
                     otherPlayers[data.id].position.x = data.player.x;
@@ -346,9 +407,15 @@
                 }
             });
 
-            socket.on('playerShot', (data) => {
-                if (data.hitPlayerId === socket.id && myHp > 0) {
-                    myHp -= data.damage || 25;
+            // Potvrzení zásažení protihráče -> Aktivace hitmarku
+            socket.on('hitConfirmed', () => {
+                triggerHitmark();
+            });
+
+            // Přijetí poškození
+            socket.on('takeDamage', (data) => {
+                if (myHp > 0) {
+                    myHp -= data.damage;
                     document.getElementById('hp').innerText = Math.max(0, myHp);
                     
                     const vignette = document.getElementById('hit-vignette');
@@ -446,7 +513,10 @@
         }
 
         function throwFlashbang() {
-            if (!isLocked || myHp <= 0) return;
+            if (!isLocked || myHp <= 0 || flashbangsCount <= 0) return;
+
+            flashbangsCount--;
+            document.getElementById('flash-count').innerText = `${flashbangsCount} / 2`;
 
             const startPos = new THREE.Vector3();
             camera.getWorldPosition(startPos);
@@ -485,6 +555,9 @@
 
         function respawn() {
             myHp = 100;
+            flashbangsCount = 2; // Obnovení granátů na 2
+            document.getElementById('flash-count').innerText = '2 / 2';
+
             ammoState = { rifle: WEAPONS.rifle.maxAmmo, sniper: WEAPONS.sniper.maxAmmo };
             stamina = maxStamina;
             document.getElementById('hp').innerText = myHp;
@@ -492,9 +565,7 @@
             document.getElementById('stamina-bar').style.width = '100%';
             document.getElementById('death-screen').classList.add('hidden');
             
-            yawObject.position.x = (Math.random() - 0.5) * 20;
-            yawObject.position.z = (Math.random() - 0.5) * 20;
-
+            socket.emit('respawnRequest');
             document.body.requestPointerLock();
         }
 
