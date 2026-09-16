@@ -179,14 +179,12 @@
             const overlay = document.createElement('div');
             overlay.id = 'nick-overlay';
             overlay.className = 'fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur-md text-white';
-            overlay.innerHTML = `
-                <div class="bg-slate-900 p-8 rounded-2xl border border-slate-700 shadow-2xl flex flex-col items-center max-w-md w-full">
-                    <h2 class="text-2xl font-black text-emerald-400 mb-2 uppercase tracking-wider">Vstup do Lesní Arény</h2>
-                    <p class="text-slate-400 text-sm mb-6 text-center">Zadej svou přezdívku pro zobrazení v tabulce a nad postavou.</p>
-                    <input type="text" id="nick-input" maxlength="12" placeholder="Tvoje přezdívka" class="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white font-bold mb-6 focus:outline-none focus:border-emerald-400 text-center">
-                    <button id="start-btn" class="w-full py-3 bg-emerald-500 hover:bg-emerald-400 font-bold text-slate-950 rounded-xl shadow-lg transition cursor-pointer">VSTOUPIT DO HRY</button>
-                </div>
-            `;
+            overlay.innerHTML = '<div class="bg-slate-900 p-8 rounded-2xl border border-slate-700 shadow-2xl flex flex-col items-center max-w-md w-full">' +
+                '<h2 class="text-2xl font-black text-emerald-400 mb-2 uppercase tracking-wider">Vstup do Lesní Arény</h2>' +
+                '<p class="text-slate-400 text-sm mb-6 text-center">Zadej svou přezdívku pro zobrazení v tabulce a nad postavou.</p>' +
+                '<input type="text" id="nick-input" maxlength="12" placeholder="Tvoje přezdívka" class="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white font-bold mb-6 focus:outline-none focus:border-emerald-400 text-center">' +
+                '<button id="start-btn" class="w-full py-3 bg-emerald-500 hover:bg-emerald-400 font-bold text-slate-950 rounded-xl shadow-lg transition cursor-pointer">VSTOUPIT DO HRY</button>' +
+                '</div>';
             document.body.appendChild(overlay);
 
             document.getElementById('start-btn').addEventListener('click', () => {
@@ -499,6 +497,7 @@
 
         function renderScoreboard(players) {
             const list = document.getElementById('scoreboard-list');
+            if (!list) return;
             list.innerHTML = '';
             
             const sorted = Object.keys(players).map(id => ({ id, kills: players[id].kills || 0, name: players[id].name || 'Hráč' }))
@@ -530,10 +529,8 @@
                 const item = document.createElement('div');
                 item.className = 'flex justify-between items-center py-0.5 border-b border-slate-800/50';
                 const isMe = p.id === socket.id;
-                item.innerHTML = `
-                    <span class="${isMe ? 'text-emerald-400 font-bold' : 'text-slate-300'}">${isMe ? myNickname : p.name}</span>
-                    <span class="text-emerald-400 font-mono font-bold">${p.kills} K</span>
-                `;
+                item.innerHTML = '<span class="' + (isMe ? 'text-emerald-400 font-bold' : 'text-slate-300') + '">' + (isMe ? myNickname : p.name) + '</span>' +
+                    '<span class="text-emerald-400 font-mono font-bold">' + p.kills + ' K</span>';
                 list.appendChild(item);
             });
         }
@@ -609,7 +606,7 @@
                         flashOverlay.style.opacity = intensity.toString();
                         const duration = Math.max(1000, 4500 * intensity);
                         setTimeout(() => {
-                            flashOverlay.style.transition = `opacity ${duration / 1000}s ease-out`;
+                            flashOverlay.style.transition = 'opacity ' + (duration / 1000) + 's ease-out';
                             flashOverlay.style.opacity = '0';
                             setTimeout(() => flashOverlay.style.transition = 'opacity 0.1s ease-out', duration);
                         }, 200);
@@ -638,7 +635,7 @@
         function throwFlashbang() {
             if (!isLocked || myHp <= 0 || flashbangsCount <= 0) return;
             flashbangsCount--;
-            document.getElementById('flash-count').innerText = `${flashbangsCount} / 2`;
+            document.getElementById('flash-count').innerText = flashbangsCount + ' / 2';
 
             const startPos = new THREE.Vector3(); camera.getWorldPosition(startPos);
             const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
@@ -930,7 +927,7 @@
                     stamina = Math.min(maxStamina, stamina + delta * 20);
                 }
 
-                document.getElementById('stamina-bar').style.width = `${(stamina / maxStamina) * 100}%`;
+                document.getElementById('stamina-bar').style.width = (stamina / maxStamina * 100) + '%';
 
                 const moveDistance = speedMultiplier * delta;
                 const oldPos = yawObject.position.clone();
