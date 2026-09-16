@@ -2,9 +2,15 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
+const path = require('path');
 
-// Servíruje statické soubory (index.html, JS, CSS) z kořenové složky
-app.use(express.static(__dirname));
+// Servíruje statické soubory ze složky 'public'
+app.use(express.static('public'));
+
+// Načte index.html ze složky 'public' při přístupu na hlavní stránku
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 let players = {};
 
