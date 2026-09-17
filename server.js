@@ -13,7 +13,6 @@ const PROP_TYPES = ['box', 'barrel', 'rock', 'pumpkin', 'haybale'];
 io.on('connection', (socket) => {
     console.log('Hráč připojen:', socket.id);
 
-    // První připojený hráč je Hunter, všichni další jsou Čarodějnice
     if (!hunterId) {
         hunterId = socket.id;
     }
