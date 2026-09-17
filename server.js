@@ -8,12 +8,12 @@ app.use(express.static('public'));
 let players = {};
 let hunterId = null;
 
-const PROP_TYPES = ['box', 'barrel', 'rock', 'table', 'pumpkin'];
+const PROP_TYPES = ['box', 'barrel', 'rock', 'pumpkin', 'haybale'];
 
 io.on('connection', (socket) => {
     console.log('Hráč připojen:', socket.id);
 
-    // První připojený je Hunter, ostatní jsou Čarodějnice
+    // První připojený hráč je Hunter, všichni další jsou Čarodějnice
     if (!hunterId) {
         hunterId = socket.id;
     }
@@ -21,13 +21,13 @@ io.on('connection', (socket) => {
     const isHunter = (socket.id === hunterId);
     players[socket.id] = {
         id: socket.id,
-        x: (Math.random() - 0.5) * 20,
+        x: (Math.random() - 0.5) * 30,
         y: 1.6,
-        z: (Math.random() - 0.5) * 20,
+        z: (Math.random() - 0.5) * 30,
         rotation: 0,
         role: isHunter ? 'hunter' : 'witch',
         propType: isHunter ? 'human' : 'barrel',
-        hp: isHunter ? 100 : 2
+        hp: isHunter ? 100 : 3
     };
 
     socket.emit('initGame', { id: socket.id, players: players, propTypes: PROP_TYPES });
@@ -43,7 +43,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Čarodějnice mění svou podobu
     socket.on('changeProp', (newProp) => {
         if (players[socket.id] && players[socket.id].role === 'witch') {
             players[socket.id].propType = newProp;
@@ -51,7 +50,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Hunter střílí
     socket.on('shoot', (data) => {
         socket.broadcast.emit('hunterShot', data);
     });
@@ -60,7 +58,10 @@ io.on('connection', (socket) => {
         delete players[socket.id];
         if (hunterId === socket.id) {
             hunterId = Object.keys(players)[0] || null;
-            if (hunterId) players[hunterId].role = 'hunter';
+            if (hunterId && players[hunterId]) {
+                players[hunterId].role = 'hunter';
+                players[hunterId].propType = 'human';
+            }
         }
         io.emit('playerDisconnected', socket.id);
     });
